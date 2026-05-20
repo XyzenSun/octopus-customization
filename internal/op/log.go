@@ -134,9 +134,12 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 			return relayLogFlushToDB(ctx)
 		}
 		// 如果未启用日志保存，移除最旧的日志，保留最新的日志用于实时查询
+		// 重建底层数组而不是 reslice，避免数组持续引用旧日志的 Request/ResponseContent 导致内存无法回收
 		keepSize := maxSize / 2
 		if len(relayLogCache) > keepSize {
-			relayLogCache = relayLogCache[len(relayLogCache)-keepSize:]
+			newCache := make([]model.RelayLog, keepSize, maxSize)
+			copy(newCache, relayLogCache[len(relayLogCache)-keepSize:])
+			relayLogCache = newCache
 		}
 	}
 	relayLogCacheLock.Unlock()
@@ -165,7 +168,9 @@ func RelayLogSaveDBTask(ctx context.Context) error {
 	relayLogCacheLock.Lock()
 	if len(relayLogCache) > relayLogMaxSizeNoDB {
 		keepSize := relayLogMaxSizeNoDB / 2
-		relayLogCache = relayLogCache[len(relayLogCache)-keepSize:]
+		newCache := make([]model.RelayLog, keepSize, relayLogMaxSizeNoDB)
+		copy(newCache, relayLogCache[len(relayLogCache)-keepSize:])
+		relayLogCache = newCache
 	}
 	relayLogCacheLock.Unlock()
 
