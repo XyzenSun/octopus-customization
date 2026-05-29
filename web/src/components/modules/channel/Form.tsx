@@ -244,7 +244,7 @@ export function ChannelForm({
                     </label>
                     <Select
                         value={String(formData.type)}
-                        onValueChange={(value) => onFormDataChange({ ...formData, type: Number(value) as ChannelType })}
+                        onValueChange={(value) => onFormDataChange({ ...formData, type: value as ChannelType })}
                     >
                         <SelectTrigger id={`${idPrefix}-type`} className="rounded-xl w-full border border-border px-4 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                             <SelectValue />

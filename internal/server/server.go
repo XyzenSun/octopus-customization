@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/bestruirui/octopus/internal/conf"
-	"github.com/bestruirui/octopus/internal/relay/bodycache"
+	"github.com/bestruirui/octopus/internal/relay"
 	_ "github.com/bestruirui/octopus/internal/server/handlers"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
@@ -13,6 +13,7 @@ import (
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/bestruirui/octopus/static"
 	"github.com/gin-gonic/gin"
+	"github.com/looplj/axonhub/llm"
 )
 
 var httpSrv http.Server
@@ -22,13 +23,6 @@ func Start() error {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
-	}
-
-	// 启动时清理 Images 请求体临时文件（失败仅告警，不阻断启动）
-	tmpDir := bodycache.TmpDirFromEnv()
-	olderThan := bodycache.TmpCleanupOlderThanFromEnv()
-	if err := bodycache.CleanupOldTmpFiles(tmpDir, bodycache.TmpFilePrefix, olderThan); err != nil {
-		log.Warnf("cleanup images tmp files failed: dir=%s prefix=%s olderThan=%s err=%v", tmpDir, bodycache.TmpFilePrefix, olderThan, err)
 	}
 
 	r := gin.New()
@@ -43,6 +37,7 @@ func Start() error {
 	r.Use(middleware.Cors())
 	r.Use(middleware.StaticEmbed("/", static.StaticFS))
 
+	registerRelayRoutes(r)
 	router.RegisterAll(r)
 
 	httpSrv.Addr = fmt.Sprintf("%s:%d", conf.AppConfig.Server.Host, conf.AppConfig.Server.Port)
@@ -57,4 +52,15 @@ func Start() error {
 
 func Close() error {
 	return httpSrv.Close()
+}
+
+func registerRelayRoutes(r *gin.Engine) {
+	v1 := r.Group("/v1", middleware.APIKeyAuth())
+	v1.POST("/chat/completions", middleware.RequireJSON(), relay.Handler(llm.APIFormatOpenAIChatCompletion))
+	v1.POST("/responses", middleware.RequireJSON(), relay.Handler(llm.APIFormatOpenAIResponse))
+	v1.POST("/messages", middleware.RequireJSON(), relay.Handler(llm.APIFormatAnthropicMessage))
+	v1.POST("/embeddings", middleware.RequireJSON(), relay.Handler(llm.APIFormatOpenAIEmbedding))
+	v1.POST("/images/generations", middleware.RequireJSON(), relay.Handler(llm.APIFormatOpenAIImageGeneration))
+	v1.POST("/images/edits", relay.Handler(llm.APIFormatOpenAIImageEdit))
+	v1.POST("/images/variations", relay.Handler(llm.APIFormatOpenAIImageVariation))
 }

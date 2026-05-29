@@ -7,12 +7,12 @@ import { StatsChannel, type StatsMetricsFormatted } from './stats';
  * 渠道类型枚举
  */
 export enum ChannelType {
-    OpenAIChat = 0,
-    OpenAIResponse = 1,
-    Anthropic = 2,
-    Gemini = 3,
-    Volcengine = 4,
-    OpenAIEmbedding = 5,
+    OpenAIChat = 'openai/chat_completions',
+    OpenAIResponse = 'openai/responses',
+    Anthropic = 'anthropic/messages',
+    Gemini = 'gemini/contents',
+    Volcengine = 'doubao',
+    OpenAIEmbedding = 'openai/embeddings',
 }
 
 /**

@@ -1,11 +1,10 @@
 package relay
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"slices"
@@ -17,352 +16,315 @@ import (
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/server/resp"
-	"github.com/bestruirui/octopus/internal/transformer/inbound"
-	"github.com/bestruirui/octopus/internal/transformer/model"
-	"github.com/bestruirui/octopus/internal/transformer/outbound"
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/gin-gonic/gin"
-	"github.com/tmaxmax/go-sse"
+	"github.com/looplj/axonhub/llm"
+	"github.com/looplj/axonhub/llm/httpclient"
+	"github.com/looplj/axonhub/llm/pipeline"
+	"github.com/looplj/axonhub/llm/pipeline/stream"
+	"github.com/looplj/axonhub/llm/streams"
+	"github.com/looplj/axonhub/llm/transformer"
 )
 
-// Handler 处理入站请求并转发到上游服务
-func Handler(inboundType inbound.InboundType, c *gin.Context) {
-	// 解析请求
-	internalRequest, inAdapter, err := parseRequest(inboundType, c)
-	if err != nil {
-		return
-	}
-	supportedModels := c.GetString("supported_models")
-	if supportedModels != "" {
-		supportedModelsArray := strings.Split(supportedModels, ",")
-		if !slices.Contains(supportedModelsArray, internalRequest.Model) {
-			resp.Error(c, http.StatusBadRequest, "model not supported")
+// Handler 返回处理入站请求并转发到上游服务的 Gin handler。
+func Handler(inboundType llm.APIFormat) gin.HandlerFunc {
+	inAdapter := newInbound(inboundType)
+	return func(c *gin.Context) {
+		run, err := newRelayRun(c, inboundType, inAdapter)
+		if err != nil {
 			return
+		}
+		run.run()
+	}
+}
+
+func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transformer.Inbound) (*relayRun, error) {
+	internalRequest, err := parseRequest(c, inboundType, inAdapter)
+	if err != nil {
+		return nil, err
+	}
+
+	if supportedModels := c.GetString("supported_models"); supportedModels != "" {
+		if !slices.Contains(strings.Split(supportedModels, ","), internalRequest.Model) {
+			err := errors.New("model not supported")
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return nil, err
 		}
 	}
 
-	requestModel := internalRequest.Model
-	apiKeyID := c.GetInt("api_key_id")
-
-	// 获取通道分组
-	group, err := op.GroupGetEnabledMap(requestModel, c.Request.Context())
+	group, err := op.GroupGetEnabledMap(internalRequest.Model, c.Request.Context())
 	if err != nil {
 		resp.Error(c, http.StatusNotFound, "model not found")
-		return
+		return nil, err
 	}
 
-	// 创建迭代器（策略排序 + 粘性优先）
-	iter := balancer.NewIterator(group, apiKeyID, requestModel)
+	apiKeyID := c.GetInt("api_key_id")
+	iter := balancer.NewIterator(group, apiKeyID, internalRequest.Model)
 	if iter.Len() == 0 {
-		resp.Error(c, http.StatusServiceUnavailable, "no available channel")
-		return
+		err := errors.New("no available channel")
+		resp.Error(c, http.StatusServiceUnavailable, err.Error())
+		return nil, err
 	}
 
-	// 初始化 Metrics
-	metrics := NewRelayMetrics(apiKeyID, requestModel, internalRequest)
-
-	// 请求级上下文
-	req := &relayRequest{
+	return &relayRun{
 		c:               c,
 		inAdapter:       inAdapter,
 		internalRequest: internalRequest,
-		metrics:         metrics,
-		apiKeyID:        apiKeyID,
-		requestModel:    requestModel,
-		iter:            iter,
-	}
+		metrics: &RelayMetrics{
+			APIKeyID:        apiKeyID,
+			RequestModel:    internalRequest.Model,
+			ActualModel:     internalRequest.Model,
+			StartTime:       time.Now(),
+			InternalRequest: internalRequest,
+		},
+		iter:  iter,
+		group: group,
+	}, nil
+}
 
+func (r *relayRun) run() {
+	ctx := r.c.Request.Context()
 	var lastErr error
 
-	for iter.Next() {
+	for r.iter.Next() {
 		select {
-		case <-c.Request.Context().Done():
+		case <-ctx.Done():
 			log.Infof("request context canceled, stopping retry")
-			metrics.Save(c.Request.Context(), false, context.Canceled, iter.Attempts())
+			r.metrics.Save(ctx, false, context.Canceled, r.iter.Attempts())
 			return
 		default:
 		}
 
-		item := iter.Item()
-
-		// 获取通道
-		channel, err := op.ChannelGet(item.ChannelID, c.Request.Context())
+		attempt, err := r.prepareAttempt()
 		if err != nil {
-			log.Warnf("failed to get channel %d: %v", item.ChannelID, err)
-			iter.Skip(item.ChannelID, 0, fmt.Sprintf("channel_%d", item.ChannelID), fmt.Sprintf("channel not found: %v", err))
 			lastErr = err
 			continue
 		}
-		if !channel.Enabled {
-			iter.Skip(channel.ID, 0, channel.Name, "channel disabled")
+		if attempt == nil {
 			continue
 		}
 
-		usedKey := channel.GetChannelKey()
-		if usedKey.ChannelKey == "" {
-			iter.Skip(channel.ID, 0, channel.Name, "no available key")
-			continue
-		}
-
-		// 熔断检查
-		if iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
-			continue
-		}
-
-		// 出站适配器
-		outAdapter := outbound.Get(channel.Type)
-		if outAdapter == nil {
-			iter.Skip(channel.ID, usedKey.ID, channel.Name, fmt.Sprintf("unsupported channel type: %d", channel.Type))
-			continue
-		}
-
-		// 类型兼容性检查
-		if internalRequest.IsEmbeddingRequest() && !outbound.IsEmbeddingChannelType(channel.Type) {
-			iter.Skip(channel.ID, usedKey.ID, channel.Name, "channel type not compatible with embedding request")
-			continue
-		}
-		if internalRequest.IsChatRequest() && !outbound.IsChatChannelType(channel.Type) {
-			iter.Skip(channel.ID, usedKey.ID, channel.Name, "channel type not compatible with chat request")
-			continue
-		}
-
-		// 设置实际模型
-		internalRequest.Model = item.ModelName
-
-		log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
-			requestModel, group.Mode, channel.Name, item.ModelName,
-			iter.Index()+1, iter.Len(), iter.IsSticky())
-
-		// 构造尝试级上下文 -- 只写变化的 4 个字段
-		ra := &relayAttempt{
-			relayRequest:         req,
-			outAdapter:           outAdapter,
-			channel:              channel,
-			usedKey:              usedKey,
-			firstTokenTimeOutSec: group.FirstTokenTimeOut,
-		}
-
-		result := ra.attempt()
-		if result.Success {
-			metrics.Save(c.Request.Context(), true, nil, iter.Attempts())
+		written, err := attempt.run()
+		if err == nil {
+			r.metrics.Save(ctx, true, nil, r.iter.Attempts())
 			return
 		}
-		if result.Written {
-			metrics.Save(c.Request.Context(), false, result.Err, iter.Attempts())
+		if written {
+			r.metrics.Save(ctx, false, err, r.iter.Attempts())
 			return
 		}
-		lastErr = result.Err
+		lastErr = err
 	}
 
-	// 所有通道都失败
-	metrics.Save(c.Request.Context(), false, lastErr, iter.Attempts())
-	resp.Error(c, http.StatusBadGateway, "all channels failed")
+	if lastErr == nil {
+		lastErr = errors.New("all channels failed")
+	}
+	r.metrics.Save(ctx, false, lastErr, r.iter.Attempts())
+	resp.Error(r.c, http.StatusBadGateway, lastErr.Error())
 }
 
-// attempt 统一管理一次通道尝试的完整生命周期
-func (ra *relayAttempt) attempt() attemptResult {
+func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
+	item := r.iter.Item()
+	channel, err := op.ChannelGet(item.ChannelID, r.c.Request.Context())
+	if err != nil {
+		log.Warnf("failed to get channel %d: %v", item.ChannelID, err)
+		r.iter.Skip(item.ChannelID, 0, fmt.Sprintf("channel_%d", item.ChannelID), fmt.Sprintf("channel not found: %v", err))
+		return nil, err
+	}
+	if !channel.Enabled {
+		r.iter.Skip(channel.ID, 0, channel.Name, "channel disabled")
+		return nil, nil
+	}
+
+	usedKey := channel.GetChannelKey()
+	if usedKey.ChannelKey == "" {
+		r.iter.Skip(channel.ID, 0, channel.Name, "no available key")
+		return nil, nil
+	}
+	if r.iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
+		return nil, nil
+	}
+
+	outAdapter, err := newOutbound(channel.Type, r.internalRequest, channel.GetBaseUrl(), usedKey.ChannelKey)
+	if err != nil {
+		r.iter.Skip(channel.ID, usedKey.ID, channel.Name, err.Error())
+		return nil, nil
+	}
+
+	// 每次尝试都把客户端模型改成本次候选的实际上游模型；重试时会被下一候选覆盖。
+	r.internalRequest.Model = item.ModelName
+	r.metrics.ActualModel = item.ModelName
+	r.metrics.ParamOverride = ""
+	log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
+		r.metrics.RequestModel, r.group.Mode, channel.Name, item.ModelName,
+		r.iter.Index()+1, r.iter.Len(), r.iter.IsSticky())
+
+	return &relayAttempt{
+		relayRun:   r,
+		outAdapter: outAdapter,
+		channel:    channel,
+		usedKey:    usedKey,
+	}, nil
+}
+
+// run 统一管理一次通道尝试的完整生命周期。
+func (ra *relayAttempt) run() (bool, error) {
 	span := ra.iter.StartAttempt(ra.channel.ID, ra.usedKey.ID, ra.channel.Name)
 
-	// 转发请求
-	statusCode, fwdErr := ra.forward()
-
-	// 更新 channel key 状态
-	ra.usedKey.StatusCode = statusCode
+	upstreamStatusCode, fwdErr := ra.forward()
+	if fwdErr == nil && upstreamStatusCode == 0 {
+		upstreamStatusCode = http.StatusOK
+	}
+	ra.usedKey.StatusCode = upstreamStatusCode
 	ra.usedKey.LastUseTimeStamp = time.Now().Unix()
 
 	if fwdErr == nil {
-		// ====== 成功 ======
-		ra.collectResponse()
 		ra.usedKey.TotalCost += ra.metrics.Stats.InputCost + ra.metrics.Stats.OutputCost
 		op.ChannelKeyUpdate(ra.usedKey)
 
-		span.End(dbmodel.AttemptSuccess, statusCode, "")
-
-		// Channel 维度统计
+		span.End(dbmodel.AttemptSuccess, "")
 		op.StatsChannelUpdate(ra.channel.ID, dbmodel.StatsMetrics{
 			WaitTime:       span.Duration().Milliseconds(),
 			RequestSuccess: 1,
 		})
-
-		// 熔断器：记录成功
 		balancer.RecordSuccess(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
-		// 会话保持：更新粘性记录
-		balancer.SetSticky(ra.apiKeyID, ra.requestModel, ra.channel.ID, ra.usedKey.ID)
-
-		ra.metrics.ParamOverride = paramOverrideValue(ra.channel.ParamOverride)
-
-		return attemptResult{Success: true}
+		balancer.SetSticky(ra.metrics.APIKeyID, ra.metrics.RequestModel, ra.channel.ID, ra.usedKey.ID)
+		return false, nil
 	}
 
-	// ====== 失败 ======
 	op.ChannelKeyUpdate(ra.usedKey)
-	span.End(dbmodel.AttemptFailed, statusCode, fwdErr.Error())
-
-	// Channel 维度统计
+	span.End(dbmodel.AttemptFailed, fwdErr.Error())
 	op.StatsChannelUpdate(ra.channel.ID, dbmodel.StatsMetrics{
 		WaitTime:      span.Duration().Milliseconds(),
 		RequestFailed: 1,
 	})
-
-	// 熔断器：记录失败
 	balancer.RecordFailure(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
 
-	ra.metrics.ParamOverride = paramOverrideValue(ra.channel.ParamOverride)
-
-	written := ra.c.Writer.Written()
-	if written {
-		ra.collectResponse()
-	}
-	return attemptResult{
-		Success: false,
-		Written: written,
-		Err:     fmt.Errorf("channel %s failed: %v", ra.channel.Name, fwdErr),
-	}
+	return ra.c.Writer.Written(), fmt.Errorf("channel %s failed: %v", ra.channel.Name, fwdErr)
 }
 
 // parseRequest 解析并验证入站请求
-func parseRequest(inboundType inbound.InboundType, c *gin.Context) (*model.InternalLLMRequest, model.Inbound, error) {
-	body, err := io.ReadAll(c.Request.Body)
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return nil, nil, err
-	}
-
-	inAdapter := inbound.Get(inboundType)
-	internalRequest, err := inAdapter.TransformRequest(c.Request.Context(), body)
-	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
-		return nil, nil, err
-	}
-
-	// Pass through the original query parameters
-	internalRequest.Query = c.Request.URL.Query()
-
-	if err := internalRequest.Validate(); err != nil {
+func parseRequest(c *gin.Context, inboundType llm.APIFormat, inAdapter transformer.Inbound) (*llm.Request, error) {
+	if inAdapter == nil {
+		err := fmt.Errorf("unsupported inbound type: %s", inboundType)
 		resp.Error(c, http.StatusBadRequest, err.Error())
-		return nil, nil, err
+		return nil, err
 	}
 
-	return internalRequest, inAdapter, nil
+	httpRequest, err := httpclient.ReadHTTPRequest(c.Request)
+	if err != nil {
+		resp.Error(c, http.StatusInternalServerError, err.Error())
+		return nil, err
+	}
+
+	internalRequest, err := inAdapter.TransformRequest(c.Request.Context(), httpRequest)
+	if err != nil {
+		statusCode := http.StatusInternalServerError
+		if errors.Is(err, transformer.ErrInvalidRequest) {
+			statusCode = http.StatusBadRequest
+		}
+		resp.Error(c, statusCode, err.Error())
+		return nil, err
+	}
+	if internalRequest.RawRequest == nil {
+		internalRequest.RawRequest = httpRequest
+	}
+
+	return internalRequest, nil
 }
 
 // forward 转发请求到上游服务
 func (ra *relayAttempt) forward() (int, error) {
 	ctx := ra.c.Request.Context()
-
-	// 构建出站请求
-	outboundRequest, err := ra.outAdapter.TransformRequest(
-		ctx,
-		ra.internalRequest,
-		ra.channel.GetBaseUrl(),
-		ra.usedKey.ChannelKey,
-	)
-	if err != nil {
-		log.Warnf("failed to create request: %v", err)
-		return 0, fmt.Errorf("failed to create request: %w", err)
+	if ra.internalRequest.RawRequest == nil {
+		return 0, fmt.Errorf("missing raw request")
 	}
 
-	// 应用 ParamOverride 到请求体
-	if ra.channel.ParamOverride != nil && *ra.channel.ParamOverride != "" {
-		body, err := io.ReadAll(outboundRequest.Body)
-		if err != nil {
-			return 0, fmt.Errorf("failed to read body: %w", err)
-		}
-
-		var bodyMap map[string]any
-		if err := json.Unmarshal(body, &bodyMap); err != nil {
-			log.Warnf("failed to unmarshal request body: %v, skipping param_override", err)
-			outboundRequest.Body = io.NopCloser(bytes.NewBuffer(body))
-			return 0, nil
-		}
-		var override map[string]any
-		if err := json.Unmarshal([]byte(*ra.channel.ParamOverride), &override); err != nil {
-			log.Warnf("failed to unmarshal param_override: %v, skipping", err)
-			outboundRequest.Body = io.NopCloser(bytes.NewBuffer(body))
-			return 0, nil
-		}
-		maps.Copy(bodyMap, override)
-		modifiedBody, err := json.Marshal(bodyMap)
-		if err != nil {
-			log.Warnf("failed to marshal modified body: %v, skipping param_override", err)
-			outboundRequest.Body = io.NopCloser(bytes.NewBuffer(body))
-			return 0, nil
-		}
-		outboundRequest.Body = io.NopCloser(bytes.NewBuffer(modifiedBody))
-		outboundRequest.ContentLength = int64(len(modifiedBody))
-	}
-
-	// 复制请求头
-	ra.copyHeaders(outboundRequest)
-
-	// 发送请求
-	response, err := ra.sendRequest(outboundRequest)
-	if err != nil {
-		return 0, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer response.Body.Close()
-
-	// 检查响应状态
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		body, err := io.ReadAll(response.Body)
-		if err != nil {
-			return 0, fmt.Errorf("failed to read response body: %w", err)
-		}
-		return 0, fmt.Errorf("upstream error: %d: %s", response.StatusCode, string(body))
-	}
-
-	// 处理响应
-	if ra.internalRequest.Stream != nil && *ra.internalRequest.Stream {
-		if err := ra.handleStreamResponse(ctx, response); err != nil {
-			return 0, err
-		}
-		return response.StatusCode, nil
-	}
-	if err := ra.handleResponse(ctx, response); err != nil {
-		return 0, err
-	}
-	return response.StatusCode, nil
-}
-
-// copyHeaders 复制请求头，过滤 hop-by-hop 头
-func (ra *relayAttempt) copyHeaders(outboundRequest *http.Request) {
-	for key, values := range ra.c.Request.Header {
-		if hopByHopHeaders[strings.ToLower(key)] {
-			continue
-		}
-		for _, value := range values {
-			outboundRequest.Header.Set(key, value)
-		}
-	}
-	if len(ra.channel.CustomHeader) > 0 {
-		for _, header := range ra.channel.CustomHeader {
-			outboundRequest.Header.Set(header.HeaderKey, header.HeaderValue)
-		}
-	}
-}
-
-// sendRequest 发送 HTTP 请求
-func (ra *relayAttempt) sendRequest(req *http.Request) (*http.Response, error) {
 	httpClient, err := helper.ChannelHttpClient(ra.channel)
 	if err != nil {
 		log.Warnf("failed to get http client: %v", err)
-		return nil, err
+		return 0, err
 	}
 
-	response, err := httpClient.Do(req)
+	relayMiddleware := &relayPipelineMiddleware{attempt: ra}
+	result, err := pipeline.NewFactory(httpclient.NewHttpClientWithClient(httpClient)).
+		Pipeline(
+			&parsedRequestInbound{Inbound: ra.inAdapter, request: ra.internalRequest},
+			ra.outAdapter,
+			pipeline.WithMiddlewares(stream.EnsureUsage(), relayMiddleware),
+			pipeline.WithEmptyResponseDetection(),
+		).
+		Process(ctx, ra.internalRequest.RawRequest)
 	if err != nil {
-		log.Warnf("failed to send request: %v", err)
-		return nil, err
+		return relayMiddleware.upstreamStatusCode, err
 	}
-
-	return response, nil
+	if result == nil {
+		return 0, fmt.Errorf("empty pipeline result")
+	}
+	if result.Stream {
+		if err := ra.writeStream(ctx, result.EventStream); err != nil {
+			return http.StatusOK, err
+		}
+		return http.StatusOK, nil
+	}
+	if result.Response == nil {
+		return 0, fmt.Errorf("empty pipeline response")
+	}
+	ra.metrics.InternalResponse = result.Response.Body
+	statusCode := result.Response.StatusCode
+	if statusCode == 0 {
+		statusCode = http.StatusOK
+	}
+	contentType := "application/json"
+	if result.Response.Headers != nil {
+		for key, values := range result.Response.Headers {
+			for _, value := range values {
+				ra.c.Header(key, value)
+			}
+		}
+		if result.Response.Headers.Get("Content-Type") != "" {
+			contentType = result.Response.Headers.Get("Content-Type")
+		}
+	}
+	ra.c.Data(statusCode, contentType, result.Response.Body)
+	return statusCode, nil
 }
 
-// handleStreamResponse 处理流式响应
-func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http.Response) error {
-	if ct := response.Header.Get("Content-Type"); ct != "" && !strings.Contains(strings.ToLower(ct), "text/event-stream") {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 16*1024))
-		return fmt.Errorf("upstream returned non-SSE content-type %q for stream request: %s", ct, string(body))
+func (ra *relayAttempt) applyChannelRequestOptions(outboundRequest *httpclient.Request) {
+	// ParamOverride 只覆盖 JSON 请求体；multipart 图片编辑等请求不能按 map 合并。
+	if ra.channel.ParamOverride != nil && *ra.channel.ParamOverride != "" && strings.Contains(strings.ToLower(outboundRequest.Headers.Get("Content-Type")+" "+outboundRequest.ContentType), "application/json") {
+		var bodyMap map[string]any
+		if err := json.Unmarshal(outboundRequest.Body, &bodyMap); err != nil {
+			log.Warnf("failed to unmarshal request body: %v, skipping param_override", err)
+		} else {
+			var override map[string]any
+			if err := json.Unmarshal([]byte(*ra.channel.ParamOverride), &override); err != nil {
+				log.Warnf("failed to unmarshal param_override: %v, skipping", err)
+			} else {
+				maps.Copy(bodyMap, override)
+				modifiedBody, err := json.Marshal(bodyMap)
+				if err != nil {
+					log.Warnf("failed to marshal modified body: %v, skipping param_override", err)
+				} else {
+					outboundRequest.Body = modifiedBody
+					ra.metrics.ParamOverride = *ra.channel.ParamOverride
+				}
+			}
+		}
+	}
+	for _, header := range ra.channel.CustomHeader {
+		// pipeline 在 raw request middleware 前已经写入 Auth；同名敏感头保持认证配置优先，延续旧 BuildHttpRequest 的覆盖顺序。
+		if outboundRequest.Headers.Get(header.HeaderKey) != "" && httpclient.IsSensitiveHeader(header.HeaderKey) {
+			continue
+		}
+		outboundRequest.Headers.Set(header.HeaderKey, header.HeaderValue)
+	}
+}
+
+// writeStream 把 pipeline 输出的客户端格式流写回请求方，并保留首 token 超时切换通道的行为。
+func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.Stream[*httpclient.StreamEvent]) error {
+	if clientStream == nil {
+		return fmt.Errorf("empty pipeline stream")
 	}
 
 	// 设置 SSE 响应头
@@ -372,28 +334,51 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 	ra.c.Header("X-Accel-Buffering", "no")
 
 	firstToken := true
-
+	responseEvents := make([]*httpclient.StreamEvent, 0, 8)
 	type sseReadResult struct {
-		data string
-		err  error
+		event *httpclient.StreamEvent
+		err   error
 	}
 	results := make(chan sseReadResult, 1)
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
 		defer close(results)
-		readCfg := &sse.ReadConfig{MaxEventSize: maxSSEEventSize}
-		for ev, err := range sse.Read(response.Body, readCfg) {
-			if err != nil {
-				results <- sseReadResult{err: err}
+		defer clientStream.Close()
+		defer func() {
+			if r := recover(); r != nil {
+				log.Warnf("stream reader panic: %v", r)
+				select {
+				case results <- sseReadResult{err: fmt.Errorf("stream reader panic: %v", r)}:
+				case <-done:
+				case <-ctx.Done():
+				}
+			}
+		}()
+		// Next 可能阻塞等待上游 token；放到协程里让首 token 超时和客户端断开都能及时打断本次通道尝试。
+		for clientStream.Next() {
+			select {
+			case results <- sseReadResult{event: clientStream.Current()}:
+			case <-done:
+				return
+			case <-ctx.Done():
 				return
 			}
-			results <- sseReadResult{data: ev.Data}
+		}
+		if err := clientStream.Err(); err != nil {
+			select {
+			case results <- sseReadResult{err: err}:
+			case <-done:
+			case <-ctx.Done():
+			}
 		}
 	}()
 
+	firstTokenTimeoutSec := ra.group.FirstTokenTimeOut
 	var firstTokenTimer *time.Timer
 	var firstTokenC <-chan time.Time
-	if firstToken && ra.firstTokenTimeOutSec > 0 {
-		firstTokenTimer = time.NewTimer(time.Duration(ra.firstTokenTimeOutSec) * time.Second)
+	if firstTokenTimeoutSec > 0 {
+		firstTokenTimer = time.NewTimer(time.Duration(firstTokenTimeoutSec) * time.Second)
 		firstTokenC = firstTokenTimer.C
 		defer func() {
 			if firstTokenTimer != nil {
@@ -406,14 +391,27 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 		select {
 		case <-ctx.Done():
 			log.Infof("client disconnected, stopping stream")
+			_ = clientStream.Close()
 			return nil
 		case <-firstTokenC:
-			log.Warnf("first token timeout (%ds), switching channel", ra.firstTokenTimeOutSec)
-			_ = response.Body.Close()
-			return fmt.Errorf("first token timeout (%ds)", ra.firstTokenTimeOutSec)
+			log.Warnf("first token timeout (%ds), switching channel", firstTokenTimeoutSec)
+			_ = clientStream.Close()
+			return fmt.Errorf("first token timeout (%ds)", firstTokenTimeoutSec)
 		case r, ok := <-results:
 			if !ok {
 				log.Infof("stream end")
+				if len(responseEvents) == 0 {
+					return nil
+				}
+				// 客户端请求流式时，pipeline 只负责边转边写，不会自动生成完整响应体。
+				// 这里复用同一个 inbound 聚合器把已经写给客户端的事件合成最终 body，日志只落一次最终响应。
+				responseBody, meta, err := ra.inAdapter.AggregateStreamChunks(context.WithoutCancel(ctx), responseEvents)
+				if err != nil {
+					log.Warnf("failed to aggregate stream response for log: %v", err)
+					return nil
+				}
+				ra.metrics.InternalResponse = responseBody
+				ra.metrics.RecordUsage(meta.Usage)
 				return nil
 			}
 			if r.err != nil {
@@ -421,12 +419,13 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 				return fmt.Errorf("failed to read stream event: %w", r.err)
 			}
 
-			data, err := ra.transformStreamData(ctx, r.data)
-			if err != nil || len(data) == 0 {
+			if r.event == nil || len(r.event.Data) == 0 {
 				continue
 			}
+			// 这里只临时保存 pipeline 已经转换好的客户端格式事件，正常结束后聚合成最终响应体用于日志；不会把分片逐条落库。
+			responseEvents = append(responseEvents, r.event)
 			if firstToken {
-				ra.metrics.SetFirstTokenTime(time.Now())
+				ra.metrics.FirstTokenTime = time.Now()
 				firstToken = false
 				if firstTokenTimer != nil {
 					if !firstTokenTimer.Stop() {
@@ -440,63 +439,64 @@ func (ra *relayAttempt) handleStreamResponse(ctx context.Context, response *http
 				}
 			}
 
-			ra.c.Writer.Write(data)
+			ra.c.SSEvent(r.event.Type, r.event.Data)
 			ra.c.Writer.Flush()
 		}
 	}
 }
 
-// transformStreamData 转换流式数据
-func (ra *relayAttempt) transformStreamData(ctx context.Context, data string) ([]byte, error) {
-	internalStream, err := ra.outAdapter.TransformStream(ctx, []byte(data))
-	if err != nil {
-		log.Warnf("failed to transform stream: %v", err)
-		return nil, err
-	}
-	if internalStream == nil {
-		return nil, nil
-	}
-
-	inStream, err := ra.inAdapter.TransformStream(ctx, internalStream)
-	if err != nil {
-		log.Warnf("failed to transform stream: %v", err)
-		return nil, err
-	}
-
-	return inStream, nil
+// relayPipelineMiddleware 承接 octopus 自己的通道级副作用：
+// 1. 在 pipeline 发出上游请求前应用渠道参数覆盖和自定义 header；
+// 2. 在上游失败时保存 HTTP 状态码，供 key 冷却、熔断和后续选路使用；
+// 3. 在非流式响应转成 llm.Response 后记录 usage。
+// axonhub/llm 只提供了部分函数式 middleware 构造器，错误状态码和 llm 响应 usage 这两个回调没有公开构造器，
+// 所以这里保留一个很薄的结构体实现完整接口，而不是在 relay 主流程里重复 pipeline 的执行逻辑。
+type relayPipelineMiddleware struct {
+	pipeline.DummyMiddleware
+	attempt            *relayAttempt
+	upstreamStatusCode int
 }
 
-// handleResponse 处理非流式响应
-func (ra *relayAttempt) handleResponse(ctx context.Context, response *http.Response) error {
-	internalResponse, err := ra.outAdapter.TransformResponse(ctx, response)
-	if err != nil {
-		log.Warnf("failed to transform response: %v", err)
-		return fmt.Errorf("failed to transform outbound response: %w", err)
-	}
-
-	inResponse, err := ra.inAdapter.TransformResponse(ctx, internalResponse)
-	if err != nil {
-		log.Warnf("failed to transform response: %v", err)
-		return fmt.Errorf("failed to transform inbound response: %w", err)
-	}
-
-	ra.c.Data(http.StatusOK, "application/json", inResponse)
-	return nil
+func (m *relayPipelineMiddleware) Name() string {
+	return "octopus_relay"
 }
 
-// collectResponse 收集响应信息
-func (ra *relayAttempt) collectResponse() {
-	internalResponse, err := ra.inAdapter.GetInternalResponse(ra.c.Request.Context())
-	if err != nil || internalResponse == nil {
-		return
+func (m *relayPipelineMiddleware) OnOutboundRawRequest(ctx context.Context, request *httpclient.Request) (*httpclient.Request, error) {
+	if request.Headers == nil {
+		request.Headers = make(http.Header)
 	}
-
-	ra.metrics.SetInternalResponse(internalResponse, ra.internalRequest.Model)
+	m.attempt.applyChannelRequestOptions(request)
+	return request, nil
 }
 
-func paramOverrideValue(ptr *string) string {
-	if ptr == nil || *ptr == "" {
-		return ""
+func (m *relayPipelineMiddleware) OnOutboundRawError(ctx context.Context, err error) {
+	var upstreamErr *httpclient.Error
+	if errors.As(err, &upstreamErr) {
+		// pipeline 会把上游错误转换成统一错误返回；这里在转换前记录原始 HTTP 状态码，用于渠道 key 的后续调度决策。
+		m.upstreamStatusCode = upstreamErr.StatusCode
 	}
-	return *ptr
+}
+
+func (m *relayPipelineMiddleware) OnOutboundLlmResponse(ctx context.Context, response *llm.Response) (*llm.Response, error) {
+	if response != nil {
+		// 非流式 usage 已由 outbound transformer 标准化到 llm.Response；流式 usage 在最终聚合时记录，避免重复计数。
+		m.attempt.metrics.RecordUsage(response.Usage)
+	}
+	return response, nil
+}
+
+// parsedRequestInbound 让 pipeline 复用 relay 在选路前已经解析好的 llm.Request。
+// 这样每次候选通道尝试只重新执行 outbound transform 和 HTTP 请求，不会重复读取或解析客户端 body。
+type parsedRequestInbound struct {
+	transformer.Inbound
+	request *llm.Request
+}
+
+func (in *parsedRequestInbound) TransformRequest(ctx context.Context, request *httpclient.Request) (*llm.Request, error) {
+	if in.request == nil {
+		return nil, fmt.Errorf("missing parsed request")
+	}
+	// relay 已经为选路解析过请求；pipeline 入口复用该结果，避免每次通道尝试再次解析同一份 body。
+	in.request.RawRequest = request
+	return in.request, nil
 }

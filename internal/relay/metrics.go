@@ -3,16 +3,14 @@ package relay
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"maps"
-	"strings"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/price"
-	transformerModel "github.com/bestruirui/octopus/internal/transformer/model"
 	"github.com/bestruirui/octopus/internal/utils/log"
+	"github.com/looplj/axonhub/llm"
 )
 
 // RelayMetrics 负责最终的日志收集与持久化
@@ -24,9 +22,9 @@ type RelayMetrics struct {
 	// 首 Token 时间
 	FirstTokenTime time.Time
 
-	// 请求和响应内容
-	InternalRequest  *transformerModel.InternalLLMRequest
-	InternalResponse *transformerModel.InternalLLMResponse
+	// 请求和最终响应体；InternalResponse 保存实际写回客户端或流式聚合后的 body，不再强制转换成 llm.Response。
+	InternalRequest  *llm.Request
+	InternalResponse []byte
 
 	// 统计指标
 	ActualModel string
@@ -36,47 +34,31 @@ type RelayMetrics struct {
 	ParamOverride string
 }
 
-func NewRelayMetrics(apiKeyID int, requestModel string, req *transformerModel.InternalLLMRequest) *RelayMetrics {
-	return &RelayMetrics{
-		APIKeyID:        apiKeyID,
-		RequestModel:    requestModel,
-		StartTime:       time.Now(),
-		InternalRequest: req,
-	}
-}
-
-func (m *RelayMetrics) SetFirstTokenTime(t time.Time) {
-	m.FirstTokenTime = t
-}
-
-func (m *RelayMetrics) SetInternalResponse(resp *transformerModel.InternalLLMResponse, actualModel string) {
-	m.InternalResponse = resp
-	m.ActualModel = actualModel
-
-	if resp == nil || resp.Usage == nil {
+func (m *RelayMetrics) RecordUsage(usage *llm.Usage) {
+	if usage == nil {
 		return
 	}
 
-	usage := resp.Usage
+	// usage 已由 axonhub/llm 标准化；octopus 仍使用本地模型价格表计算成本，所以这里只做用量落点和价格换算。
 	m.Stats.InputToken = usage.PromptTokens
 	m.Stats.OutputToken = usage.CompletionTokens
 
-	modelPrice := price.GetLLMPrice(actualModel)
+	modelPrice := price.GetLLMPrice(m.ActualModel)
 	if modelPrice == nil {
 		return
 	}
-	if usage.PromptTokensDetails == nil {
-		usage.PromptTokensDetails = &transformerModel.PromptTokensDetails{
-			CachedTokens: 0,
-		}
+	tokenDetails := usage.PromptTokensDetails
+	if tokenDetails == nil {
+		tokenDetails = &llm.PromptTokensDetails{}
 	}
-	if usage.AnthropicUsage {
-		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead +
-			float64(usage.PromptTokens)*modelPrice.Input +
-			float64(usage.CacheCreationInputTokens)*modelPrice.CacheWrite) * 1e-6
-	} else {
-		m.Stats.InputCost = (float64(usage.PromptTokensDetails.CachedTokens)*modelPrice.CacheRead + float64(usage.PromptTokens-usage.PromptTokensDetails.CachedTokens)*modelPrice.Input) * 1e-6
+	// 缓存读、缓存写和普通输入的单价不同；如果上游返回的缓存明细超过总输入 token，就退回按全部输入 token 计费，避免出现负成本。
+	nonCachedTokens := usage.PromptTokens - tokenDetails.CachedTokens - tokenDetails.WriteCachedTokens
+	if nonCachedTokens < 0 {
+		nonCachedTokens = usage.PromptTokens
 	}
+	m.Stats.InputCost = (float64(tokenDetails.CachedTokens)*modelPrice.CacheRead +
+		float64(tokenDetails.WriteCachedTokens)*modelPrice.CacheWrite +
+		float64(nonCachedTokens)*modelPrice.Input) * 1e-6
 	m.Stats.OutputCost = float64(usage.CompletionTokens) * modelPrice.Output * 1e-6
 }
 
@@ -101,7 +83,15 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 	op.StatsHourlyUpdate(globalStats)
 	op.StatsDailyUpdate(context.Background(), globalStats)
 	op.StatsAPIKeyUpdate(m.APIKeyID, globalStats)
-	op.StatsChannelUpdate(channelID, globalStats)
+	if channelID > 0 {
+		// 通道成功/失败和等待时间在每次 attempt 结束时已记录；这里仅把最终响应的用量成本归到实际通道，避免重复计数。
+		op.StatsChannelUpdate(channelID, model.StatsMetrics{
+			InputToken:  m.Stats.InputToken,
+			OutputToken: m.Stats.OutputToken,
+			InputCost:   m.Stats.InputCost,
+			OutputCost:  m.Stats.OutputCost,
+		})
+	}
 
 	log.Infof("relay complete: model=%s, channel=%d(%s), success=%t, duration=%dms, input_token=%d, output_token=%d, input_cost=%f, output_cost=%f, total_cost=%f, attempts=%d",
 		m.RequestModel, channelID, channelName, success, duration.Milliseconds(),
@@ -109,7 +99,8 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 		m.Stats.InputCost, m.Stats.OutputCost, m.Stats.InputCost+m.Stats.OutputCost,
 		len(attempts))
 
-	m.saveLog(ctx, err, duration, attempts, channelID, channelName)
+	// 客户端断开或请求上下文取消后仍要保存最终审计日志，因此持久化阶段主动脱离请求取消信号。
+	m.saveLog(context.WithoutCancel(ctx), err, duration, attempts, channelID, channelName)
 }
 
 func finalChannel(attempts []model.ChannelAttempt) (int, string) {
@@ -129,17 +120,12 @@ func finalChannel(attempts []model.ChannelAttempt) (int, string) {
 }
 
 func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Duration, attempts []model.ChannelAttempt, channelID int, channelName string) {
-	actualModel := m.ActualModel
-	if actualModel == "" {
-		actualModel = m.RequestModel
-	}
-
 	relayLog := model.RelayLog{
 		Time:             m.StartTime.Unix(),
 		RequestModelName: m.RequestModel,
 		ChannelName:      channelName,
 		ChannelId:        channelID,
-		ActualModelName:  actualModel,
+		ActualModelName:  m.ActualModel,
 		UseTime:          int(duration.Milliseconds()),
 		Attempts:         attempts,
 		TotalAttempts:    len(attempts),
@@ -154,55 +140,17 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		relayLog.Ftut = int(m.FirstTokenTime.Sub(m.StartTime).Milliseconds())
 	}
 
-	// Usage
-	if m.InternalResponse != nil && m.InternalResponse.Usage != nil {
-		relayLog.InputTokens = int(m.InternalResponse.Usage.PromptTokens)
-		relayLog.OutputTokens = int(m.InternalResponse.Usage.CompletionTokens)
+	// 用量
+	if m.Stats.InputToken > 0 || m.Stats.OutputToken > 0 {
+		relayLog.InputTokens = int(m.Stats.InputToken)
+		relayLog.OutputTokens = int(m.Stats.OutputToken)
 		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
 	}
 
-	// 请求内容
-	if m.InternalRequest != nil {
-		reqJSON, jsonErr := json.Marshal(m.InternalRequest)
-		if jsonErr != nil {
-			relayLog.RequestContent = string(reqJSON)
-		} else if m.ParamOverride == "" {
-			relayLog.RequestContent = string(reqJSON)
-		} else {
-			var reqMap map[string]any
-			if err := json.Unmarshal(reqJSON, &reqMap); err != nil {
-				relayLog.RequestContent = string(reqJSON)
-			} else {
-				var override map[string]any
-				if err := json.Unmarshal([]byte(m.ParamOverride), &override); err != nil {
-					relayLog.RequestContent = string(reqJSON)
-				} else {
-					maps.Copy(reqMap, override)
-					if finalJSON, err := json.Marshal(reqMap); err != nil {
-						relayLog.RequestContent = string(reqJSON)
-					} else {
-						relayLog.RequestContent = string(finalJSON)
-					}
-				}
-			}
-		}
+	relayLog.RequestContent = m.requestContent()
+	if len(m.InternalResponse) > 0 {
+		relayLog.ResponseContent = string(m.InternalResponse)
 	}
-
-	// 响应内容
-	if m.InternalResponse != nil {
-		respForLog := m.filterResponseForLog(m.InternalResponse)
-		if respJSON, jsonErr := json.Marshal(respForLog); jsonErr == nil {
-			if m.InternalResponse.Usage != nil && m.InternalResponse.Usage.AnthropicUsage {
-				respStr := string(respJSON)
-				old := `"usage":{`
-				insert := fmt.Sprintf(`"usage":{"cache_creation_input_tokens":%d,`, m.InternalResponse.Usage.CacheCreationInputTokens)
-				respJSON = []byte(strings.Replace(respStr, old, insert, 1))
-			}
-			relayLog.ResponseContent = string(respJSON)
-		}
-	}
-
-	// 错误信息
 	if err != nil {
 		relayLog.Error = err.Error()
 	}
@@ -212,46 +160,53 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	}
 }
 
-// filterResponseForLog 创建响应的浅拷贝，过滤掉 images、MultipleContent 中的图片数据和 Audio.Data 以减少存储压力
-func (m *RelayMetrics) filterResponseForLog(resp *transformerModel.InternalLLMResponse) *transformerModel.InternalLLMResponse {
-	if resp == nil {
+func (m *RelayMetrics) requestContent() string {
+	if m.InternalRequest == nil {
+		return ""
+	}
+
+	reqJSON, err := json.Marshal(filterRequestForLog(m.InternalRequest))
+	if err != nil {
+		return ""
+	}
+	if m.ParamOverride == "" {
+		return string(reqJSON)
+	}
+
+	var reqMap map[string]any
+	if err := json.Unmarshal(reqJSON, &reqMap); err != nil {
+		return string(reqJSON)
+	}
+	var override map[string]any
+	if err := json.Unmarshal([]byte(m.ParamOverride), &override); err != nil {
+		return string(reqJSON)
+	}
+
+	// 日志里的请求体要反映本次实际发给上游的参数覆盖，但失败解析时保留原始可审计内容。
+	maps.Copy(reqMap, override)
+	finalJSON, err := json.Marshal(reqMap)
+	if err != nil {
+		return string(reqJSON)
+	}
+	return string(finalJSON)
+}
+
+// filterRequestForLog 去掉 RawRequest 和图片二进制字段，避免 multipart 原始 body 或图片内容落库。
+func filterRequestForLog(req *llm.Request) *llm.Request {
+	if req == nil {
 		return nil
 	}
-
-	filterMsg := func(msg *transformerModel.Message) *transformerModel.Message {
-		if msg == nil {
-			return nil
+	filtered := *req
+	filtered.RawRequest = nil
+	if req.Image != nil {
+		img := *req.Image
+		if len(img.Images) > 0 {
+			img.Images = nil
 		}
-		c := *msg
-		c.Images = nil
-		if len(c.Content.MultipleContent) > 0 {
-			parts := make([]transformerModel.MessageContentPart, 0, len(c.Content.MultipleContent))
-			for _, p := range c.Content.MultipleContent {
-				if p.Type == "image_url" && p.ImageURL != nil {
-					parts = append(parts, transformerModel.MessageContentPart{
-						Type:     "image_url",
-						ImageURL: &transformerModel.ImageURL{URL: "[image data omitted for storage]"},
-					})
-				} else {
-					parts = append(parts, p)
-				}
-			}
-			c.Content = transformerModel.MessageContent{Content: c.Content.Content, MultipleContent: parts}
+		if len(img.Mask) > 0 {
+			img.Mask = nil
 		}
-		if c.Audio != nil && c.Audio.Data != "" {
-			a := *c.Audio
-			a.Data = "[audio data omitted for storage]"
-			c.Audio = &a
-		}
-		return &c
-	}
-
-	filtered := *resp
-	filtered.Choices = make([]transformerModel.Choice, len(resp.Choices))
-	for i, choice := range resp.Choices {
-		filtered.Choices[i] = choice
-		filtered.Choices[i].Message = filterMsg(choice.Message)
-		filtered.Choices[i].Delta = filterMsg(choice.Delta)
+		filtered.Image = &img
 	}
 	return &filtered
 }

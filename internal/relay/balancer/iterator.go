@@ -150,7 +150,7 @@ type AttemptSpan struct {
 }
 
 // End 结束尝试：设置状态，自动计算耗时，追加到 Iterator
-func (s *AttemptSpan) End(status model.AttemptStatus, statusCode int, msg string) {
+func (s *AttemptSpan) End(status model.AttemptStatus, msg string) {
 	if s.ended {
 		return
 	}
