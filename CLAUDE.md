@@ -104,7 +104,7 @@ handler → op（缓存+CRUD）→ model（GORM 模型）→ db（数据库）
 
 - 配置优先级：环境变量 `OCTOPUS_*` > config.json > 默认值（viper AutomaticEnv）
 - 前端为静态导出（`output: "export"`），不支持 Next.js SSR/API routes
-- axonhub/llm 是本地 replace 指令（`../axonhub/llm`），修改时需注意本地路径依赖
+- axonhub/llm 使用 monorepo commit 伪版本 pin（无独立 `llm/vX.Y.Z` tag）；不要再依赖本地 `../axonhub/llm` replace
 - 数据库迁移在 `internal/db/migrate/`，按编号递增（001、002、003...）
 - shutdown 需使用 SIGTERM 或 Ctrl+C，不要 `kill -9`（会导致内存统计丢失）
 - 默认登录 admin/admin，首次启动后应立即修改密码
