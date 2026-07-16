@@ -17,24 +17,28 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets.ACTION_TOKEN }}
+          # Prefer ACTION_TOKEN if set (PAT with contents:write for protected branches);
+          # fall back to GITHUB_TOKEN so missing secret does not pass empty token.
+          token: ${{ secrets.ACTION_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - run: npx changelogithub
+      - name: Generate changelog and create GitHub Release
+        run: npx changelogithub
         env:
-          GITHUB_TOKEN: ${{secrets.ACTION_TOKEN}}
+          GITHUB_TOKEN: ${{ secrets.ACTION_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Merge dev to master branch
+      - name: Merge dev to main branch
         run: |
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'github-actions@github.com'
-          if ! git show-ref --verify --quiet refs/heads/master; then
-            git checkout -b master
+          git fetch origin dev main
+          if ! git show-ref --verify --quiet refs/remotes/origin/main; then
+            echo "origin/main does not exist; creating main from current tag commit"
+            git checkout -B main
           else
-            git checkout master
+            git checkout -B main origin/main
           fi
-          git fetch origin dev
           git merge origin/dev
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}
-          git push origin master --force
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}"
+          git push origin main
         env:
-          GITHUB_TOKEN: ${{secrets.ACTION_TOKEN}}
+          GITHUB_TOKEN: ${{ secrets.ACTION_TOKEN || secrets.GITHUB_TOKEN }}
