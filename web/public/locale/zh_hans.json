@@ -324,11 +324,23 @@
         "log": {
             "title": "日志设置",
             "enabled": {
-                "label": "启用历史日志"
+                "label": "日志记录到数据库(内存缓存)"
             },
             "keepPeriod": {
                 "label": "日志保存天数",
                 "placeholder": "请输入天数"
+            },
+            "flushSize": {
+                "label": "刷写上限",
+                "hint": "启用数据库日志时生效，0 表示实时写入，大于 0 表示达到此数量后批量写入"
+            },
+            "memoryCacheSize": {
+                "label": "内存缓存上限",
+                "hint": "关闭数据库日志时生效，0 表示不记录任何日志，大于 0 表示超过此数量后保留最新的一半"
+            },
+            "memoryEnabled": {
+                "label": "启用日志记录到内存",
+                "hint": "关闭后将不记录任何日志，包括实时查询"
             },
             "clear": {
                 "label": "清空历史日志",

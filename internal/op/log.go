@@ -13,8 +13,8 @@ import (
 	"github.com/bestruirui/octopus/internal/utils/snowflake"
 )
 
-const relayLogMaxSize = 20
-const relayLogMaxSizeNoDB = 100 // 当不保存到数据库时，允许更大的缓存用于实时查询
+const relayLogMaxSize = 20           // 默认刷写上限（已废弃，使用 relay_log_flush_size 配置）
+const relayLogMaxSizeNoDB = 100      // 默认内存缓存上限（已废弃，使用 relay_log_memory_cache_size 配置）
 
 var relayLogCache = make([]model.RelayLog, 0, relayLogMaxSize)
 var relayLogCacheLock sync.Mutex
@@ -102,11 +102,16 @@ func relayLogFlushToDB(ctx context.Context) error {
 
 	relayLogCacheLock.Lock()
 	if len(relayLogCache) >= flushedUpto {
-		relayLogCache = relayLogCache[flushedUpto:]
+		// 重建底层数组而不是 reslice，避免数组持续引用已 flush 日志的 Request/ResponseContent 导致内存无法回收
+		remainingCount := len(relayLogCache) - flushedUpto
+		if remainingCount > 0 {
+			newCache := make([]model.RelayLog, remainingCount, relayLogMaxSize)
+			copy(newCache, relayLogCache[flushedUpto:])
+			relayLogCache = newCache
+		} else {
+			relayLogCache = make([]model.RelayLog, 0, relayLogMaxSize)
+		}
 	} else {
-		relayLogCache = relayLogCache[:0]
-	}
-	if len(relayLogCache) == 0 {
 		relayLogCache = make([]model.RelayLog, 0, relayLogMaxSize)
 	}
 	relayLogCacheLock.Unlock()
@@ -119,27 +124,48 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 	if err != nil {
 		return err
 	}
-	maxSize := relayLogMaxSize
-	if !enabled {
-		maxSize = relayLogMaxSizeNoDB
+
+	// 获取配置的刷写/缓存上限
+	var maxSize int
+	if enabled {
+		maxSize, err = SettingGetInt(model.SettingKeyRelayLogFlushSize)
+		if err != nil || maxSize < 0 {
+			maxSize = relayLogMaxSize // 回退到默认值
+		}
+		// maxSize = 0 表示实时写入数据库
+	} else {
+		maxSize, err = SettingGetInt(model.SettingKeyRelayLogMemoryCacheSize)
+		if err != nil || maxSize < 0 {
+			maxSize = relayLogMaxSizeNoDB // 回退到默认值
+		}
+		// maxSize = 0 表示不记录任何日志
+		if maxSize == 0 {
+			return nil
+		}
 	}
+
 	relayLog.ID = snowflake.GenerateID()
 	go notifySubscribers(relayLog)
 
 	relayLogCacheLock.Lock()
 	relayLogCache = append(relayLogCache, relayLog)
-	if len(relayLogCache) >= maxSize {
-		if enabled {
+
+	if enabled {
+		// 数据库模式：maxSize = 0 表示实时写入，> 0 表示达到阈值后批量写入
+		if maxSize == 0 || len(relayLogCache) >= maxSize {
 			relayLogCacheLock.Unlock()
 			return relayLogFlushToDB(ctx)
 		}
-		// 如果未启用日志保存，移除最旧的日志，保留最新的日志用于实时查询
-		// 重建底层数组而不是 reslice，避免数组持续引用旧日志的 Request/ResponseContent 导致内存无法回收
-		keepSize := maxSize / 2
-		if len(relayLogCache) > keepSize {
-			newCache := make([]model.RelayLog, keepSize, maxSize)
-			copy(newCache, relayLogCache[len(relayLogCache)-keepSize:])
-			relayLogCache = newCache
+	} else {
+		// 仅内存模式：达到上限后保留最新的一半
+		if len(relayLogCache) >= maxSize {
+			// 重建底层数组而不是 reslice，避免数组持续引用旧日志的 Request/ResponseContent 导致内存无法回收
+			keepSize := maxSize / 2
+			if len(relayLogCache) > keepSize {
+				newCache := make([]model.RelayLog, keepSize, maxSize)
+				copy(newCache, relayLogCache[len(relayLogCache)-keepSize:])
+				relayLogCache = newCache
+			}
 		}
 	}
 	relayLogCacheLock.Unlock()
@@ -166,9 +192,16 @@ func RelayLogSaveDBTask(ctx context.Context) error {
 
 	// 如果未启用日志保存，检查缓存大小，如果超过限制则清理旧日志
 	relayLogCacheLock.Lock()
-	if len(relayLogCache) > relayLogMaxSizeNoDB {
-		keepSize := relayLogMaxSizeNoDB / 2
-		newCache := make([]model.RelayLog, keepSize, relayLogMaxSizeNoDB)
+	maxSizeNoDB, err := SettingGetInt(model.SettingKeyRelayLogMemoryCacheSize)
+	if err != nil || maxSizeNoDB < 0 {
+		maxSizeNoDB = relayLogMaxSizeNoDB // 回退到默认值
+	}
+	// maxSizeNoDB = 0 表示不记录日志，清空缓存
+	if maxSizeNoDB == 0 {
+		relayLogCache = make([]model.RelayLog, 0, relayLogMaxSize)
+	} else if len(relayLogCache) > maxSizeNoDB {
+		keepSize := maxSizeNoDB / 2
+		newCache := make([]model.RelayLog, keepSize, maxSizeNoDB)
 		copy(newCache, relayLogCache[len(relayLogCache)-keepSize:])
 		relayLogCache = newCache
 	}

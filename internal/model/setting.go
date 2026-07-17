@@ -15,6 +15,9 @@ const (
 	SettingKeySyncLLMInterval           SettingKey = "sync_llm_interval"            // LLM 同步间隔(小时)
 	SettingKeyRelayLogKeepPeriod        SettingKey = "relay_log_keep_period"        // 日志保存时间范围(天)
 	SettingKeyRelayLogKeepEnabled       SettingKey = "relay_log_keep_enabled"       // 是否保留历史日志
+	SettingKeyRelayLogMemoryEnabled     SettingKey = "relay_log_memory_enabled"     // 是否记录日志到内存
+	SettingKeyRelayLogFlushSize         SettingKey = "relay_log_flush_size"         // 启用日志保存时的刷写上限
+	SettingKeyRelayLogMemoryCacheSize   SettingKey = "relay_log_memory_cache_size"  // 仅内存时的缓存上限
 	SettingKeyCORSAllowOrigins          SettingKey = "cors_allow_origins"           // 跨域白名单(逗号分隔, 如 "example.com,example2.com"). 为空不允许跨域, "*"允许所有
 	SettingKeyCircuitBreakerThreshold   SettingKey = "circuit_breaker_threshold"    // 熔断触发阈值（连续失败次数）
 	SettingKeyCircuitBreakerCooldown    SettingKey = "circuit_breaker_cooldown"     // 熔断基础冷却时间（秒）
@@ -35,6 +38,9 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeySyncLLMInterval, Value: "24"},            // 默认24小时同步一次LLM
 		{Key: SettingKeyRelayLogKeepPeriod, Value: "7"},          // 默认日志保存7天
 		{Key: SettingKeyRelayLogKeepEnabled, Value: "true"},      // 默认保留历史日志
+		{Key: SettingKeyRelayLogMemoryEnabled, Value: "true"},    // 默认记录日志到内存
+		{Key: SettingKeyRelayLogFlushSize, Value: "20"},          // 默认刷写上限20条
+		{Key: SettingKeyRelayLogMemoryCacheSize, Value: "100"},   // 默认内存缓存100条
 		{Key: SettingKeyCircuitBreakerThreshold, Value: "5"},     // 默认连续失败5次触发熔断
 		{Key: SettingKeyCircuitBreakerCooldown, Value: "60"},     // 默认基础冷却60秒
 		{Key: SettingKeyCircuitBreakerMaxCooldown, Value: "600"}, // 默认最大冷却600秒（10分钟）
@@ -44,13 +50,14 @@ func DefaultSettings() []Setting {
 func (s *Setting) Validate() error {
 	switch s.Key {
 	case SettingKeyModelInfoUpdateInterval, SettingKeySyncLLMInterval, SettingKeyRelayLogKeepPeriod,
-		SettingKeyCircuitBreakerThreshold, SettingKeyCircuitBreakerCooldown, SettingKeyCircuitBreakerMaxCooldown:
+		SettingKeyCircuitBreakerThreshold, SettingKeyCircuitBreakerCooldown, SettingKeyCircuitBreakerMaxCooldown,
+		SettingKeyRelayLogFlushSize, SettingKeyRelayLogMemoryCacheSize:
 		_, err := strconv.Atoi(s.Value)
 		if err != nil {
 			return fmt.Errorf("model info update interval must be an integer")
 		}
 		return nil
-	case SettingKeyRelayLogKeepEnabled:
+	case SettingKeyRelayLogKeepEnabled, SettingKeyRelayLogMemoryEnabled:
 		if s.Value != "true" && s.Value != "false" {
 			return fmt.Errorf("relay log keep enabled must be true or false")
 		}
