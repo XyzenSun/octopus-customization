@@ -22,11 +22,14 @@ readonly GIT_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev'
 readonly COMMIT_ID="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 
 # Build flags
+# -s -w: 去除调试信息和符号表（减少 30-40% 体积）
+# -trimpath: 去除文件系统路径信息
 readonly LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${GIT_VERSION}' \
                   -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
                   -X 'github.com/bestruirui/octopus/internal/conf.Author=${GIT_AUTHOR}' \
                   -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
                   -s -w"
+readonly BUILD_FLAGS="-trimpath"
 
 # =============================================================================
 # Utility Functions
@@ -292,9 +295,9 @@ build_standard() {
     log_info "Building ${os}/${arch}..."
 
     if ! GOOS="${os}" GOARCH="${go_arch}" CGO_ENABLED=0 \
-        go build -o "${output_file}" -ldflags="${LDFLAGS}" -tags=jsoniter "${MAIN_DIR}" 2>&1; then
+        go build -o "${output_file}" -ldflags="${LDFLAGS}" ${BUILD_FLAGS} -tags=jsoniter "${MAIN_DIR}" 2>&1; then
         log_error "Failed to build ${os}/${arch}"
-        log_error "Build command: GOOS=${os} GOARCH=${go_arch} CGO_ENABLED=0 go build -o ${output_file} -ldflags=\"${LDFLAGS}\" -tags=jsoniter ${MAIN_DIR}"
+        log_error "Build command: GOOS=${os} GOARCH=${go_arch} CGO_ENABLED=0 go build -o ${output_file} -ldflags=\"${LDFLAGS}\" ${BUILD_FLAGS} -tags=jsoniter ${MAIN_DIR}"
         return 1
     fi
 
