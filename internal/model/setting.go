@@ -26,7 +26,7 @@ const (
 // 默认值常量
 const (
 	DefaultRelayLogFlushSize       = 50  // 默认刷写上限
-	DefaultRelayLogMemoryCacheSize = 200 // 默认内存缓存上限
+	DefaultRelayLogMemoryCacheSize = 100 // 默认内存缓存上限
 )
 
 type Setting struct {
@@ -44,7 +44,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyRelayLogKeepPeriod, Value: "7"},          // 默认日志保存7天
 		{Key: SettingKeyRelayLogKeepEnabled, Value: "true"},      // 默认保留历史日志
 		{Key: SettingKeyRelayLogFlushSize, Value: "50"},          // 默认刷写上限50条
-		{Key: SettingKeyRelayLogMemoryCacheSize, Value: "200"},   // 默认内存缓存200条
+		{Key: SettingKeyRelayLogMemoryCacheSize, Value: "100"},   // 默认内存缓存100条
 		{Key: SettingKeyCircuitBreakerThreshold, Value: "5"},     // 默认连续失败5次触发熔断
 		{Key: SettingKeyCircuitBreakerCooldown, Value: "60"},     // 默认基础冷却60秒
 		{Key: SettingKeyCircuitBreakerMaxCooldown, Value: "600"}, // 默认最大冷却600秒（10分钟）
