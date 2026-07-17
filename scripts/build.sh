@@ -21,19 +21,39 @@ readonly GIT_AUTHOR="bestrui"
 readonly GIT_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo 'dev')"
 readonly COMMIT_ID="$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
 
-# Build flags
-# -s -w: 去除调试信息和符号表（减少 30-40% 体积）
-# -trimpath: 去除文件系统路径信息
-readonly LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${GIT_VERSION}' \
-                  -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
-                  -X 'github.com/bestruirui/octopus/internal/conf.Author=${GIT_AUTHOR}' \
-                  -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}' \
-                  -s -w"
-readonly BUILD_FLAGS="-trimpath"
+# Build mode (will be set by parse_args)
+DEBUG_MODE=false
+
+# Base LDFLAGS (version info, always included)
+readonly BASE_LDFLAGS="-X 'github.com/bestruirui/octopus/internal/conf.Version=${GIT_VERSION}' \
+                       -X 'github.com/bestruirui/octopus/internal/conf.BuildTime=${BUILD_TIME}' \
+                       -X 'github.com/bestruirui/octopus/internal/conf.Author=${GIT_AUTHOR}' \
+                       -X 'github.com/bestruirui/octopus/internal/conf.Commit=${COMMIT_ID}'"
+
+# Build flags (will be set based on DEBUG_MODE)
+# Production mode: -s -w (去除调试信息和符号表，减少 30-40% 体积)
+#                  -trimpath (去除文件系统路径信息)
+# Debug mode: 保留符号表和完整路径，便于调试和性能分析
+LDFLAGS=""
+BUILD_FLAGS=""
 
 # =============================================================================
 # Utility Functions
 # =============================================================================
+
+set_build_flags() {
+    if [ "$DEBUG_MODE" = true ]; then
+        # Debug mode: 保留符号表和完整路径
+        LDFLAGS="${BASE_LDFLAGS}"
+        BUILD_FLAGS=""
+        log_info "🐛 Debug mode enabled (symbols and paths preserved)"
+    else
+        # Production mode: 去除调试信息，优化体积
+        LDFLAGS="${BASE_LDFLAGS} -s -w"
+        BUILD_FLAGS="-trimpath"
+        log_info "🚀 Production mode (optimized for size)"
+    fi
+}
 
 log_info() {
     echo "ℹ️  $1"
@@ -459,7 +479,10 @@ prepare_docker_binaries() {
 # =============================================================================
 
 show_usage() {
-    echo "Usage: $0 <command> [os] [arch]"
+    echo "Usage: $0 [--debug] <command> [os] [arch]"
+    echo ""
+    echo "Options:"
+    echo "  --debug              Build with debug symbols and full paths (for debugging)"
     echo ""
     echo "Commands:"
     echo "  release              Build all platforms and create distribution packages"
@@ -471,6 +494,12 @@ show_usage() {
     echo ""
     echo "Supported architectures:"
     echo "  x86_64, arm64, armv7, x86"
+    echo ""
+    echo "Examples:"
+    echo "  $0 build linux x86_64                # Production build (optimized)"
+    echo "  $0 --debug build linux x86_64        # Debug build (with symbols)"
+    echo "  $0 release                           # Build all platforms (production)"
+    echo "  $0 --debug release                   # Build all platforms (debug)"
     echo ""
     echo "Examples:"
     echo "  $0 build windows x86_64"
@@ -507,11 +536,20 @@ validate_os_arch() {
 }
 
 main() {
+    # Parse --debug flag
+    if [ "${1:-}" = "--debug" ]; then
+        DEBUG_MODE=true
+        shift
+    fi
+
+    # Set build flags based on mode
+    set_build_flags
+
     case "${1:-}" in
     "build")
         if [ $# -ne 3 ]; then
             log_error "Build command requires OS and architecture"
-            log_error "Usage: $0 build <os> <arch>"
+            log_error "Usage: $0 [--debug] build <os> <arch>"
             show_usage
             exit 1
         fi
