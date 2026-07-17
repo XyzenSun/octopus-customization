@@ -17,14 +17,12 @@ export function SettingLog() {
     const clearLogs = useClearLogs();
 
     const [enabled, setEnabled] = useState(true);
-    const [memoryEnabled, setMemoryEnabled] = useState(true);
     const [keepPeriod, setKeepPeriod] = useState('7');
     const [flushSize, setFlushSize] = useState('20');
     const [memoryCacheSize, setMemoryCacheSize] = useState('100');
     const [isClearing, setIsClearing] = useState(false);
 
     const initialEnabled = useRef(true);
-    const initialMemoryEnabled = useRef(true);
     const initialKeepPeriod = useRef('7');
     const initialFlushSize = useRef('20');
     const initialMemoryCacheSize = useRef('100');
@@ -32,7 +30,6 @@ export function SettingLog() {
     useEffect(() => {
         if (settings) {
             const enabledSetting = settings.find(s => s.key === SettingKey.RelayLogKeepEnabled);
-            const memoryEnabledSetting = settings.find(s => s.key === SettingKey.RelayLogMemoryEnabled);
             const periodSetting = settings.find(s => s.key === SettingKey.RelayLogKeepPeriod);
             const flushSizeSetting = settings.find(s => s.key === SettingKey.RelayLogFlushSize);
             const memoryCacheSizeSetting = settings.find(s => s.key === SettingKey.RelayLogMemoryCacheSize);
@@ -41,11 +38,6 @@ export function SettingLog() {
                 const isEnabled = enabledSetting.value === 'true';
                 queueMicrotask(() => setEnabled(isEnabled));
                 initialEnabled.current = isEnabled;
-            }
-            if (memoryEnabledSetting) {
-                const isMemoryEnabled = memoryEnabledSetting.value === 'true';
-                queueMicrotask(() => setMemoryEnabled(isMemoryEnabled));
-                initialMemoryEnabled.current = isMemoryEnabled;
             }
             if (periodSetting) {
                 queueMicrotask(() => setKeepPeriod(periodSetting.value));
@@ -70,19 +62,6 @@ export function SettingLog() {
                 onSuccess: () => {
                     toast.success(t('saved'));
                     initialEnabled.current = checked;
-                }
-            }
-        );
-    };
-
-    const handleMemoryEnabledChange = (checked: boolean) => {
-        setMemoryEnabled(checked);
-        setSetting.mutate(
-            { key: SettingKey.RelayLogMemoryEnabled, value: checked ? 'true' : 'false' },
-            {
-                onSuccess: () => {
-                    toast.success(t('saved'));
-                    initialMemoryEnabled.current = checked;
                 }
             }
         );
