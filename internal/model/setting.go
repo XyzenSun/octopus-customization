@@ -23,6 +23,12 @@ const (
 	SettingKeyCircuitBreakerMaxCooldown SettingKey = "circuit_breaker_max_cooldown" // 熔断最大冷却时间（秒），指数退避上限
 )
 
+// 默认值常量
+const (
+	DefaultRelayLogFlushSize       = 50  // 默认刷写上限
+	DefaultRelayLogMemoryCacheSize = 200 // 默认内存缓存上限
+)
+
 type Setting struct {
 	Key   SettingKey `json:"key" gorm:"primaryKey"`
 	Value string     `json:"value" gorm:"not null"`
@@ -37,8 +43,8 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeySyncLLMInterval, Value: "24"},            // 默认24小时同步一次LLM
 		{Key: SettingKeyRelayLogKeepPeriod, Value: "7"},          // 默认日志保存7天
 		{Key: SettingKeyRelayLogKeepEnabled, Value: "true"},      // 默认保留历史日志
-		{Key: SettingKeyRelayLogFlushSize, Value: "20"},          // 默认刷写上限20条
-		{Key: SettingKeyRelayLogMemoryCacheSize, Value: "100"},   // 默认内存缓存100条
+		{Key: SettingKeyRelayLogFlushSize, Value: "50"},          // 默认刷写上限50条
+		{Key: SettingKeyRelayLogMemoryCacheSize, Value: "200"},   // 默认内存缓存200条
 		{Key: SettingKeyCircuitBreakerThreshold, Value: "5"},     // 默认连续失败5次触发熔断
 		{Key: SettingKeyCircuitBreakerCooldown, Value: "60"},     // 默认基础冷却60秒
 		{Key: SettingKeyCircuitBreakerMaxCooldown, Value: "600"}, // 默认最大冷却600秒（10分钟）
