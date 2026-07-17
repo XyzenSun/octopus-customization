@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useTranslations } from 'next-intl';
-import { ScrollText, Calendar, Trash2 } from 'lucide-react';
+import { ScrollText, Calendar, Trash2, Database } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -18,15 +18,22 @@ export function SettingLog() {
 
     const [enabled, setEnabled] = useState(true);
     const [keepPeriod, setKeepPeriod] = useState('7');
+    const [flushSize, setFlushSize] = useState('20');
+    const [memoryCacheSize, setMemoryCacheSize] = useState('100');
     const [isClearing, setIsClearing] = useState(false);
 
     const initialEnabled = useRef(true);
     const initialKeepPeriod = useRef('7');
+    const initialFlushSize = useRef('20');
+    const initialMemoryCacheSize = useRef('100');
 
     useEffect(() => {
         if (settings) {
             const enabledSetting = settings.find(s => s.key === SettingKey.RelayLogKeepEnabled);
             const periodSetting = settings.find(s => s.key === SettingKey.RelayLogKeepPeriod);
+            const flushSizeSetting = settings.find(s => s.key === SettingKey.RelayLogFlushSize);
+            const memoryCacheSizeSetting = settings.find(s => s.key === SettingKey.RelayLogMemoryCacheSize);
+
             if (enabledSetting) {
                 const isEnabled = enabledSetting.value === 'true';
                 queueMicrotask(() => setEnabled(isEnabled));
@@ -35,6 +42,14 @@ export function SettingLog() {
             if (periodSetting) {
                 queueMicrotask(() => setKeepPeriod(periodSetting.value));
                 initialKeepPeriod.current = periodSetting.value;
+            }
+            if (flushSizeSetting) {
+                queueMicrotask(() => setFlushSize(flushSizeSetting.value));
+                initialFlushSize.current = flushSizeSetting.value;
+            }
+            if (memoryCacheSizeSetting) {
+                queueMicrotask(() => setMemoryCacheSize(memoryCacheSizeSetting.value));
+                initialMemoryCacheSize.current = memoryCacheSizeSetting.value;
             }
         }
     }, [settings]);
@@ -61,6 +76,34 @@ export function SettingLog() {
                 onSuccess: () => {
                     toast.success(t('saved'));
                     initialKeepPeriod.current = keepPeriod;
+                }
+            }
+        );
+    };
+
+    const handleFlushSizeSave = () => {
+        if (flushSize === initialFlushSize.current) return;
+
+        setSetting.mutate(
+            { key: SettingKey.RelayLogFlushSize, value: flushSize },
+            {
+                onSuccess: () => {
+                    toast.success(t('saved'));
+                    initialFlushSize.current = flushSize;
+                }
+            }
+        );
+    };
+
+    const handleMemoryCacheSizeSave = () => {
+        if (memoryCacheSize === initialMemoryCacheSize.current) return;
+
+        setSetting.mutate(
+            { key: SettingKey.RelayLogMemoryCacheSize, value: memoryCacheSize },
+            {
+                onSuccess: () => {
+                    toast.success(t('saved'));
+                    initialMemoryCacheSize.current = memoryCacheSize;
                 }
             }
         );
@@ -113,6 +156,44 @@ export function SettingLog() {
                     placeholder={t('log.keepPeriod.placeholder')}
                     className="w-48 rounded-xl"
                     disabled={!enabled}
+                />
+            </div>
+
+            {/* 刷写上限 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-3">
+                        <Database className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('log.flushSize.label')}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground ml-8">{t('log.flushSize.hint')}</span>
+                </div>
+                <Input
+                    type="number"
+                    value={flushSize}
+                    onChange={(e) => setFlushSize(e.target.value)}
+                    onBlur={handleFlushSizeSave}
+                    placeholder="20"
+                    className="w-48 rounded-xl"
+                />
+            </div>
+
+            {/* 内存缓存上限 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-3">
+                        <Database className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('log.memoryCacheSize.label')}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground ml-8">{t('log.memoryCacheSize.hint')}</span>
+                </div>
+                <Input
+                    type="number"
+                    value={memoryCacheSize}
+                    onChange={(e) => setMemoryCacheSize(e.target.value)}
+                    onBlur={handleMemoryCacheSizeSave}
+                    placeholder="100"
+                    className="w-48 rounded-xl"
                 />
             </div>
 

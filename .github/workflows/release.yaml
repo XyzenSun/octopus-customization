@@ -59,16 +59,6 @@ jobs:
           tag_name: ${{ steps.tag.outputs.TAG_NAME }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker meta (Debian)
-        id: meta-debian
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ghcr.io/xyzensun/octopus-customization
-          tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.tag.outputs.TAG_NAME }}
-
       - name: Docker meta (Alpine)
         id: meta-alpine
         uses: docker/metadata-action@v5
@@ -76,6 +66,8 @@ jobs:
           images: |
             ghcr.io/xyzensun/octopus-customization
           tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.tag.outputs.TAG_NAME }}
             type=raw,value=latest-alpine
             type=raw,value=${{ steps.tag.outputs.TAG_NAME }}-alpine
 
@@ -101,13 +93,3 @@ jobs:
           platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
           tags: ${{ steps.meta-alpine.outputs.tags }}
           labels: ${{ steps.meta-alpine.outputs.labels }}
-
-      - name: Build and push (Debian)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./scripts/dockerfiles/Dockerfile.debian
-          push: true
-          platforms: linux/amd64,linux/386,linux/arm64,linux/arm/v7
-          tags: ${{ steps.meta-debian.outputs.tags }}
-          labels: ${{ steps.meta-debian.outputs.labels }}

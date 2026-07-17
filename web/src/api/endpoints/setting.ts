@@ -18,6 +18,8 @@ export const SettingKey = {
     SyncLLMInterval: 'sync_llm_interval',
     RelayLogKeepEnabled: 'relay_log_keep_enabled',
     RelayLogKeepPeriod: 'relay_log_keep_period',
+    RelayLogFlushSize: 'relay_log_flush_size',
+    RelayLogMemoryCacheSize: 'relay_log_memory_cache_size',
     CORSAllowOrigins: 'cors_allow_origins',
     CircuitBreakerThreshold: 'circuit_breaker_threshold',
     CircuitBreakerCooldown: 'circuit_breaker_cooldown',

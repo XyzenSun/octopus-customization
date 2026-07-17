@@ -117,3 +117,41 @@ handler → op（缓存+CRUD）→ model（GORM 模型）→ db（数据库）
 - 添加新定时任务只需在 `task.Register()` 注册，`task.RUN()` 会自动调度
 - 前端新增页面模块：在 `route/config.tsx` 添加路由配置 + `components/modules/` 新建目录
 - 运行遇到复杂配置或数据库连接问题时，参见 `README_zh.md` 获取完整配置示例
+
+### 远程开发环境配置
+
+当在远程服务器上开发时，前端需要访问远程后端 API：
+
+```bash
+# 前端开发服务器指向远程后端
+cd web
+NEXT_PUBLIC_API_BASE_URL="http://<服务器IP>:8080" pnpm run dev
+```
+
+后端 CORS 配置（开发环境）：
+```bash
+# 通过 API 设置 CORS 允许所有来源（仅开发环境）
+curl -X POST "http://127.0.0.1:8080/api/v1/setting/set" \
+     -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"key":"cors_allow_origins","value":"*"}'
+```
+
+**生产环境** 必须设置具体域名：`"example.com,app.example.com"`
+
+### 配置项删除检查清单
+
+删除 Setting 配置项时必须检查：
+1. `internal/model/setting.go`：常量定义、`DefaultSettings()`、`Validate()`
+2. `web/src/api/endpoints/setting.ts`：`SettingKey` 对象
+3. 前端组件：移除状态变量、handler 函数、UI 元素
+4. 相关业务逻辑：确认没有其他地方引用该配置
+
+### API 测试最佳实践
+
+- 先确认路由的正确 HTTP 方法（查看 handler 文件或使用 `grep`）
+- JSON 请求必须设置 `Content-Type: application/json`
+- 测试前清理旧数据，避免结果污染：`curl -X DELETE .../log/clear`
+- 验证边界值：`0`、负数、极大值等特殊情况
+
+更多问题记录和解决方案参见：`.trellis/troubleshooting.md`

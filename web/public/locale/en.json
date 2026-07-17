@@ -324,11 +324,23 @@
         "log": {
             "title": "Log Settings",
             "enabled": {
-                "label": "Enable History Logs"
+                "label": "Log to Database (Memory Cache)"
             },
             "keepPeriod": {
                 "label": "Log Retention (days)",
                 "placeholder": "Enter days"
+            },
+            "flushSize": {
+                "label": "Flush Threshold",
+                "hint": "When database logging is enabled, 0 = write immediately, > 0 = batch write after reaching this count"
+            },
+            "memoryCacheSize": {
+                "label": "Memory Cache Limit",
+                "hint": "When database logging is disabled, 0 = no logs recorded, > 0 = keep the most recent half when exceeding this limit"
+            },
+            "memoryEnabled": {
+                "label": "Enable Memory Logging",
+                "hint": "Disable to stop recording any logs, including real-time queries"
             },
             "clear": {
                 "label": "Clear History Logs",
