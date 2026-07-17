@@ -13,6 +13,6 @@ RUN apk add --no-cache ca-certificates tzdata su-exec && \
 COPY build/docker/${TARGETPLATFORM}/octopus /app/octopus
 COPY scripts/dockerfiles/entrypoint.sh /entrypoint.sh
 
-RUN chmod +x /entrypoint.sh /app/octopus
+RUN chmod +x /entrypoint.sh
 
 CMD ["/entrypoint.sh"]
