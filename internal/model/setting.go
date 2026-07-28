@@ -21,6 +21,7 @@ const (
 	SettingKeyCircuitBreakerThreshold   SettingKey = "circuit_breaker_threshold"    // 熔断触发阈值（连续失败次数）
 	SettingKeyCircuitBreakerCooldown    SettingKey = "circuit_breaker_cooldown"     // 熔断基础冷却时间（秒）
 	SettingKeyCircuitBreakerMaxCooldown SettingKey = "circuit_breaker_max_cooldown" // 熔断最大冷却时间（秒），指数退避上限
+	SettingKeyCircuitBreakerEnabled     SettingKey = "circuit_breaker_enabled"      // 熔断器全局开关
 )
 
 // 默认值常量
@@ -48,6 +49,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyCircuitBreakerThreshold, Value: "5"},     // 默认连续失败5次触发熔断
 		{Key: SettingKeyCircuitBreakerCooldown, Value: "60"},     // 默认基础冷却60秒
 		{Key: SettingKeyCircuitBreakerMaxCooldown, Value: "600"}, // 默认最大冷却600秒（10分钟）
+		{Key: SettingKeyCircuitBreakerEnabled, Value: "true"},    // 默认启用熔断器
 	}
 }
 
@@ -64,6 +66,11 @@ func (s *Setting) Validate() error {
 	case SettingKeyRelayLogKeepEnabled:
 		if s.Value != "true" && s.Value != "false" {
 			return fmt.Errorf("relay log keep enabled must be true or false")
+		}
+		return nil
+	case SettingKeyCircuitBreakerEnabled:
+		if s.Value != "true" && s.Value != "false" {
+			return fmt.Errorf("circuit breaker enabled must be true or false")
 		}
 		return nil
 	case SettingKeyProxyURL:

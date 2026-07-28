@@ -170,6 +170,10 @@
         },
         "circuitBreaker": {
             "title": "熔断器配置",
+            "enabled": {
+                "label": "启用熔断器",
+                "hint": "关闭后所有通道不再进行熔断检查"
+            },
             "threshold": {
                 "label": "熔断触发阈值（连续失败次数）",
                 "placeholder": "请输入阈值"
@@ -182,7 +186,20 @@
                 "label": "最大冷却时间（秒）",
                 "placeholder": "请输入最大冷却时间"
             },
-            "hint": "当渠道连续失败达到阈值后触发熔断，冷却时间按指数退避增长，上限为最大冷却时间"
+            "hint": "当渠道连续失败达到阈值后触发熔断，冷却时间按指数退避增长，上限为最大冷却时间",
+            "status": {
+                "title": "当前熔断状态",
+                "empty": "当前无熔断通道",
+                "reset": "全部重置",
+                "resetConfirm": "确定清除所有熔断状态？",
+                "stateOpen": "熔断中",
+                "stateHalfOpen": "半开",
+                "cooldown": "剩余冷却 {seconds}s",
+                "tripCount": "熔断次数 {count}",
+                "channel": "通道",
+                "key": "Key",
+                "model": "模型"
+            }
         },
         "saved": "已保存",
         "backup": {

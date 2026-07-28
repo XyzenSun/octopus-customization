@@ -170,6 +170,10 @@
         },
         "circuitBreaker": {
             "title": "Circuit Breaker",
+            "enabled": {
+                "label": "Enable Circuit Breaker",
+                "hint": "When disabled, no channel will be checked for circuit breaking"
+            },
             "threshold": {
                 "label": "Failure Threshold (consecutive failures)",
                 "placeholder": "Enter threshold"
@@ -182,7 +186,20 @@
                 "label": "Max Cooldown (seconds)",
                 "placeholder": "Enter max cooldown in seconds"
             },
-            "hint": "When a channel fails consecutively up to the threshold, circuit breaker trips. Cooldown grows exponentially up to the max cooldown"
+            "hint": "When a channel fails consecutively up to the threshold, circuit breaker trips. Cooldown grows exponentially up to the max cooldown",
+            "status": {
+                "title": "Current Circuit Status",
+                "empty": "No circuit-broken channels",
+                "reset": "Reset All",
+                "resetConfirm": "Clear all circuit breaker states?",
+                "stateOpen": "Open",
+                "stateHalfOpen": "Half-Open",
+                "cooldown": "Cooldown {seconds}s",
+                "tripCount": "Trips {count}",
+                "channel": "Channel",
+                "key": "Key",
+                "model": "Model"
+            }
         },
         "saved": "Saved",
         "backup": {
