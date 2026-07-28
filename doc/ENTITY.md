@@ -148,13 +148,16 @@
 | `model_info_update_interval` | `24` | 模型信息更新间隔（小时） |
 | `sync_llm_interval` | `24` | LLM 同步间隔（小时） |
 | `relay_log_keep_period` | `7` | 日志保存时间范围（天） |
-| `relay_log_mode` | `persistent` | 日志模式（disabled/memory/persistent） |
-| `cors_allow_origins` | `""` | 跨域白名单（逗号分隔；`""` 不允许跨域，`*` 允许所有） |
+| `relay_log_keep_enabled` | `true` | 是否保留历史日志（`true`/`false`） |
+| `relay_log_flush_size` | `50` | 启用日志保存时的刷写上限（条） |
+| `relay_log_memory_cache_size` | `100` | 仅内存时的缓存上限（条） |
+| `cors_allow_origins` | `*` | 跨域白名单（逗号分隔；`""` 不允许跨域，`*` 允许所有） |
 | `circuit_breaker_threshold` | `5` | 熔断触发阈值（连续失败次数） |
 | `circuit_breaker_cooldown` | `60` | 熔断基础冷却时间（秒） |
 | `circuit_breaker_max_cooldown` | `600` | 熔断最大冷却时间（秒，指数退避上限） |
+| `circuit_breaker_enabled` | `true` | 熔断器全局开关（`true`/`false`），关闭后所有熔断检查/记录短路 |
 
-> 数值类设置由 `Validate()` 校验为整数；`relay_log_mode` 仅接受 `disabled/memory/persistent`；`proxy_url` 校验 scheme 为 http/https/socks5 且 host 非空。
+> 数值类设置由 `Validate()` 校验为整数；`relay_log_keep_enabled` 与 `circuit_breaker_enabled` 仅接受 `true`/`false`；`proxy_url` 校验 scheme 为 http/https/socks5 且 host 非空。
 
 ---
 
@@ -217,7 +220,7 @@
 | `circuit_break` | `AttemptCircuitBreak` | 熔断跳过 |
 | `skipped` | `AttemptSkipped` | 其他原因跳过（禁用/无 Key/类型不兼容等） |
 
-> 日志保留时间由 `Setting.relay_log_keep_period` 控制；日志模式由 `Setting.relay_log_mode` 控制（disabled=彻底关闭，memory=内存缓存，persistent=持久化保存）。
+> 日志保留时间由 `Setting.relay_log_keep_period`（天）控制；是否保留历史日志由 `Setting.relay_log_keep_enabled`（bool）控制——关闭后日志仅保留在内存缓存（上限 `relay_log_memory_cache_size` 条），不持久化到数据库。
 
 ---
 

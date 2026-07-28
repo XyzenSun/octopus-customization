@@ -399,6 +399,43 @@ data: {RelayLog JSON}\n\n
 
 ---
 
+## 熔断模块（Circuit）
+
+路径前缀：`/api/v1/circuit`，全部需要 JWT 鉴权。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/v1/circuit/status` | 查询当前处于熔断状态的通道列表 |
+| `POST` | `/api/v1/circuit/reset` | 清空所有熔断状态 |
+
+### GET /api/v1/circuit/status
+
+返回当前处于熔断中（`State=Open` 且冷却未过期）的通道列表。冷却已过期的 `Open` 条目会在查询时自动转为 `HalfOpen` 并跳过展示；`HalfOpen` 条目不展示（已允许试探请求通过）。
+
+**响应 `data`：** `[]CircuitBreakerStatus`（见 DTO.MD）
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": [
+    {
+      "channel_name": "dead-60001",
+      "state": "open",
+      "remaining_cooldown": 59
+    }
+  ]
+}
+```
+
+### POST /api/v1/circuit/reset
+
+清空所有熔断器内存状态（`sync.Map` 全部删除），不影响设置项。
+
+**响应 `data`：** `null`
+
+---
+
 ## 模型模块（Model / LLM）
 
 路径前缀：`/api/v1/model`（JWT），兼容路由：`/v1/models`（API Key）
@@ -559,8 +596,9 @@ data: {RelayLog JSON}\n\n
 | API Key | 6 | JWT / API Key |
 | 日志（Log） | 4 | JWT / Stream Token |
 | 设置（Setting） | 4 | JWT |
+| 熔断（Circuit） | 2 | JWT |
 | 模型（Model） | 8 | JWT / API Key |
 | 统计（Stats） | 5 | JWT |
 | 更新（Update） | 3 | JWT |
 | LLM 转发（Relay） | 7 | API Key |
-| **合计** | **53** | — |
+| **合计** | **55** | — |

@@ -581,6 +581,26 @@
 
 ---
 
+## 熔断模块（Circuit）
+
+路径前缀 `/api/v1/circuit`，全部需要 JWT 鉴权。
+
+### 响应 DTO
+
+#### CircuitBreakerStatus（熔断状态条目）
+
+`GET /api/v1/circuit/status` 返回 `data: []CircuitBreakerStatus`。
+
+| 字段 | 类型 | JSON 键 | 说明 |
+|------|------|---------|------|
+| ChannelName | `string` | `channel_name` | 通道名称（查 `op.ChannelGet` 缓存，未命中回退 `Channel#<id>`） |
+| State | `string` | `state` | 熔断状态，目前仅返回 `"open"`（`half_open` 不展示） |
+| RemainingCooldown | `int64` | `remaining_cooldown` | 剩余冷却时间（秒），`open` 状态下 > 0 |
+
+> `POST /api/v1/circuit/reset` 无请求体、无响应 `data`（`null`）。
+
+---
+
 ## 更新模块（Update）
 
 路径前缀 `/api/v1/update`，全部需要 JWT 鉴权。无请求体。

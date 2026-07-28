@@ -14,6 +14,13 @@ const messages: Record<Locale, typeof zh_hansMessages> = {
     en: enMessages,
 };
 
+// 内部 locale key（下划线，用于 localStorage / 文件名）→ BCP 47 语言标签（连字符，next-intl 4.x 严格校验）
+const localeToBCP47: Record<Locale, string> = {
+    zh_hans: 'zh-Hans',
+    zh_hant: 'zh-Hant',
+    en: 'en',
+};
+
 export function LocaleProvider({ children }: { children: ReactNode }) {
     const { locale } = useSettingStore();
     const [currentLocale, setCurrentLocale] = useState<Locale>('zh_hans');
@@ -24,7 +31,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
     return (
         <NextIntlClientProvider
-            locale={currentLocale}
+            locale={localeToBCP47[currentLocale]}
             messages={messages[currentLocale]}
             timeZone="Asia/Shanghai"
         >

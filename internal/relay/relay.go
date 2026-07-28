@@ -82,6 +82,15 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 	}, nil
 }
 
+var errClientDisconnected = errors.New("client disconnected")
+
+func isClientDisconnected(ctx context.Context, err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, http.ErrAbortHandler) {
+		return true
+	}
+	return err == nil && ctx != nil && errors.Is(ctx.Err(), context.Canceled)
+}
+
 func (r *relayRun) run() {
 	ctx := r.c.Request.Context()
 	var lastErr error
@@ -107,6 +116,10 @@ func (r *relayRun) run() {
 		written, err := attempt.run()
 		if err == nil {
 			r.metrics.Save(ctx, true, nil, r.iter.Attempts())
+			return
+		}
+		if errors.Is(err, errClientDisconnected) {
+			r.metrics.Save(ctx, false, context.Canceled, r.iter.Attempts())
 			return
 		}
 		if written {
@@ -191,6 +204,9 @@ func (ra *relayAttempt) run() (bool, error) {
 		balancer.SetSticky(ra.metrics.APIKeyID, ra.metrics.RequestModel, ra.channel.ID, ra.usedKey.ID)
 		return false, nil
 	}
+	if errors.Is(fwdErr, errClientDisconnected) {
+		return false, fwdErr
+	}
 
 	op.ChannelKeyUpdate(ra.usedKey)
 	span.End(dbmodel.AttemptFailed, fwdErr.Error())
@@ -247,15 +263,29 @@ func (ra *relayAttempt) forward() (int, error) {
 	}
 
 	relayMiddleware := &relayPipelineMiddleware{attempt: ra}
+	pipelineOptions := []pipeline.Option{
+		pipeline.WithMiddlewares(stream.EnsureUsage(), relayMiddleware),
+		pipeline.WithEmptyResponseDetection(),
+	}
+	if ra.internalRequest.Stream != nil && *ra.internalRequest.Stream && ra.group.FirstTokenTimeOut > 0 {
+		pipelineOptions = append(pipelineOptions, pipeline.WithResponseTimeouts(time.Duration(ra.group.FirstTokenTimeOut)*time.Second, 0))
+	}
+
 	result, err := pipeline.NewFactory(httpclient.NewHttpClientWithClient(httpClient)).
 		Pipeline(
 			&parsedRequestInbound{Inbound: ra.inAdapter, request: ra.internalRequest},
 			ra.outAdapter,
-			pipeline.WithMiddlewares(stream.EnsureUsage(), relayMiddleware),
-			pipeline.WithEmptyResponseDetection(),
+			pipelineOptions...,
 		).
 		Process(ctx, ra.internalRequest.RawRequest)
 	if err != nil {
+		if errors.Is(err, pipeline.ErrStreamFirstEventTimeout) {
+			log.Warnf("first token timeout (%ds), switching channel", ra.group.FirstTokenTimeOut)
+			return relayMiddleware.upstreamStatusCode, err
+		}
+		if isClientDisconnected(ctx, err) {
+			return relayMiddleware.upstreamStatusCode, errClientDisconnected
+		}
 		return relayMiddleware.upstreamStatusCode, err
 	}
 	if result == nil {
@@ -321,7 +351,8 @@ func (ra *relayAttempt) applyChannelRequestOptions(outboundRequest *httpclient.R
 	}
 }
 
-// writeStream 把 pipeline 输出的客户端格式流写回请求方，并保留首 token 超时切换通道的行为。
+// writeStream 把 pipeline 输出的客户端格式流写回请求方。
+// 首个有效上游响应片段的超时由 pipeline.WithResponseTimeouts 在 Process 阶段处理。
 func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.Stream[*httpclient.StreamEvent]) error {
 	if clientStream == nil {
 		return fmt.Errorf("empty pipeline stream")
@@ -374,29 +405,12 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 		}
 	}()
 
-	firstTokenTimeoutSec := ra.group.FirstTokenTimeOut
-	var firstTokenTimer *time.Timer
-	var firstTokenC <-chan time.Time
-	if firstTokenTimeoutSec > 0 {
-		firstTokenTimer = time.NewTimer(time.Duration(firstTokenTimeoutSec) * time.Second)
-		firstTokenC = firstTokenTimer.C
-		defer func() {
-			if firstTokenTimer != nil {
-				firstTokenTimer.Stop()
-			}
-		}()
-	}
-
 	for {
 		select {
 		case <-ctx.Done():
 			log.Infof("client disconnected, stopping stream")
 			_ = clientStream.Close()
 			return nil
-		case <-firstTokenC:
-			log.Warnf("first token timeout (%ds), switching channel", firstTokenTimeoutSec)
-			_ = clientStream.Close()
-			return fmt.Errorf("first token timeout (%ds)", firstTokenTimeoutSec)
 		case r, ok := <-results:
 			if !ok {
 				log.Infof("stream end")
@@ -427,16 +441,6 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 			if firstToken {
 				ra.metrics.FirstTokenTime = time.Now()
 				firstToken = false
-				if firstTokenTimer != nil {
-					if !firstTokenTimer.Stop() {
-						select {
-						case <-firstTokenTimer.C:
-						default:
-						}
-					}
-					firstTokenTimer = nil
-					firstTokenC = nil
-				}
 			}
 
 			ra.c.SSEvent(r.event.Type, r.event.Data)
