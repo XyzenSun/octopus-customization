@@ -268,6 +268,23 @@
 
 ---
 
+## 五·补、熔断状态 VO
+
+### CircuitBreakerStatus（熔断器状态导出）
+
+**用途**：`GET /api/v1/circuit/status` 的响应条目，由 `balancer.ListTripped()` 遍历内存 `globalBreaker` 生成，**不持久化**。
+**源码**：`internal/relay/balancer/circuit.go`
+
+| 字段 | Go 类型 | JSON 键 | 说明 |
+|------|---------|---------|------|
+| ChannelName | `string` | `channel_name` | 通道名称（查 `op.ChannelGet` 缓存，未命中回退 `Channel#<id>`） |
+| State | `string` | `state` | 熔断状态，目前仅返回 `"open"`（`half_open` 不展示） |
+| RemainingCooldown | `int64` | `remaining_cooldown` | 剩余冷却时间（秒），`open` 状态下 > 0 |
+
+> `ListTripped` 仅返回 `State=Open` 且冷却未过期的条目；冷却已过期的 `Open` 条目会在查询时自动转为 `HalfOpen` 并跳过；`HalfOpen` 条目也已允许试探请求通过，不展示。
+
+---
+
 ## 六、前端展示 VO（Formatted）
 
 > 后端返回的 `StatsMetrics` 字段都是数值，前端通过 `select()` 将其转换为「格式化字符串」用于直接渲染（千分位、单位、时长等），由 `web/src/lib/utils.ts` 中的 `formatCount` / `formatMoney` / `formatTime` 完成。
