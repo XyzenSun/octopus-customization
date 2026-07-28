@@ -13,7 +13,7 @@ export interface CircuitBreakerStatus {
 
 /**
  * 查询当前处于熔断状态的通道列表
- * 策略：页面加载时立即获取一次，3 秒后再获取一次，共两次，不持续轮询
+ * 策略：页面加载时立即获取，之后每 15 秒轮询一次
  */
 export function useCircuitStatus() {
     return useQuery({
@@ -21,8 +21,7 @@ export function useCircuitStatus() {
         queryFn: async () => {
             return apiClient.get<CircuitBreakerStatus[]>('/api/v1/circuit/status');
         },
-        // 首次加载后 3 秒再拉一次，之后停止
-        refetchInterval: (query) => query.state.dataUpdateCount < 2 ? 3000 : false,
+        refetchInterval: 15000,
         refetchOnMount: 'always',
         refetchOnWindowFocus: false,
     });
