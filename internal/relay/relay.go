@@ -17,6 +17,7 @@ import (
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/utils/log"
+	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
@@ -68,6 +69,7 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 
 	return &relayRun{
 		c:               c,
+		inboundType:     inboundType,
 		inAdapter:       inAdapter,
 		internalRequest: internalRequest,
 		metrics: &RelayMetrics{
@@ -263,18 +265,34 @@ func (ra *relayAttempt) forward() (int, error) {
 	}
 
 	relayMiddleware := &relayPipelineMiddleware{attempt: ra}
+	passthroughEnabled := ra.canPassthrough()
+	middlewares := []pipeline.Middleware{relayMiddleware}
+	if !passthroughEnabled {
+		middlewares = append([]pipeline.Middleware{stream.EnsureUsage()}, middlewares...)
+	}
 	pipelineOptions := []pipeline.Option{
-		pipeline.WithMiddlewares(stream.EnsureUsage(), relayMiddleware),
+		pipeline.WithMiddlewares(middlewares...),
 		pipeline.WithEmptyResponseDetection(),
 	}
 	if ra.internalRequest.Stream != nil && *ra.internalRequest.Stream && ra.group.FirstTokenTimeOut > 0 {
 		pipelineOptions = append(pipelineOptions, pipeline.WithResponseTimeouts(time.Duration(ra.group.FirstTokenTimeOut)*time.Second, 0))
 	}
 
+	inbound := transformer.Inbound(&parsedRequestInbound{Inbound: ra.inAdapter, request: ra.internalRequest})
+	outbound := ra.outAdapter
+	if passthroughEnabled {
+		passthrough, err := newPassthroughTransformer(ra)
+		if err != nil {
+			return 0, err
+		}
+		inbound = &passthroughInbound{transformer: passthrough, request: ra.internalRequest}
+		outbound = passthrough
+	}
+
 	result, err := pipeline.NewFactory(httpclient.NewHttpClientWithClient(httpClient)).
 		Pipeline(
-			&parsedRequestInbound{Inbound: ra.inAdapter, request: ra.internalRequest},
-			ra.outAdapter,
+			inbound,
+			outbound,
 			pipelineOptions...,
 		).
 		Process(ctx, ra.internalRequest.RawRequest)
@@ -308,9 +326,7 @@ func (ra *relayAttempt) forward() (int, error) {
 	contentType := "application/json"
 	if result.Response.Headers != nil {
 		for key, values := range result.Response.Headers {
-			for _, value := range values {
-				ra.c.Header(key, value)
-			}
+			ra.c.Writer.Header()[key] = append([]string(nil), values...)
 		}
 		if result.Response.Headers.Get("Content-Type") != "" {
 			contentType = result.Response.Headers.Get("Content-Type")
@@ -443,7 +459,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 				firstToken = false
 			}
 
-			ra.c.SSEvent(r.event.Type, r.event.Data)
+			ra.c.Render(-1, sse.Event{Event: r.event.Type, Id: r.event.LastEventID, Data: r.event.Data})
 			ra.c.Writer.Flush()
 		}
 	}

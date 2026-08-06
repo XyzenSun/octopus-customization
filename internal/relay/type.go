@@ -11,6 +11,7 @@ import (
 // relayRun 保存一次客户端请求在负载均衡循环中共享的状态。
 type relayRun struct {
 	c               *gin.Context
+	inboundType     llm.APIFormat
 	inAdapter       transformer.Inbound
 	internalRequest *llm.Request
 	metrics         *RelayMetrics

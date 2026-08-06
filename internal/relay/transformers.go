@@ -2,9 +2,12 @@ package relay
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
 
 	dbmodel "github.com/bestruirui/octopus/internal/model"
 	"github.com/looplj/axonhub/llm"
+	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/transformer"
 	"github.com/looplj/axonhub/llm/transformer/anthropic"
 	"github.com/looplj/axonhub/llm/transformer/doubao"
@@ -88,5 +91,54 @@ func newOutbound(channelType llm.APIFormat, request *llm.Request, baseURL, key s
 		}
 	default:
 		return nil, fmt.Errorf("%s request is not supported by relay", requestType)
+	}
+}
+
+func passthroughEndpoint(format llm.APIFormat, baseURL string) (string, *httpclient.AuthConfig, error) {
+	var path string
+	switch format {
+	case llm.APIFormatOpenAIChatCompletion:
+		path = "/chat/completions"
+	case llm.APIFormatOpenAIResponse:
+		path = "/responses"
+	case llm.APIFormatOpenAIEmbedding:
+		path = "/embeddings"
+	case llm.APIFormatOpenAIImageGeneration:
+		path = "/images/generations"
+	case llm.APIFormatOpenAIImageEdit:
+		path = "/images/edits"
+	case llm.APIFormatOpenAIImageVariation:
+		path = "/images/variations"
+	case llm.APIFormatAnthropicMessage:
+		path = "/messages"
+	default:
+		return "", nil, fmt.Errorf("API format %s does not support passthrough", format)
+	}
+
+	rawURL := strings.HasSuffix(baseURL, "##")
+	baseURL = strings.TrimSuffix(baseURL, "##")
+	if rawURL {
+		return strings.TrimRight(baseURL, "/"), passthroughAuth(format), nil
+	}
+
+	// 与 axonhub transformer 的单 # 约定保持一致：跳过默认版本号，但仍追加 endpoint。
+	skipVersion := strings.HasSuffix(baseURL, "#")
+	baseURL = strings.TrimSuffix(baseURL, "#")
+	if skipVersion {
+		return strings.TrimRight(baseURL, "/") + path, passthroughAuth(format), nil
+	}
+	return transformer.NormalizeBaseURL(baseURL, "v1") + path, passthroughAuth(format), nil
+}
+
+func passthroughAuth(format llm.APIFormat) *httpclient.AuthConfig {
+	if format == llm.APIFormatAnthropicMessage {
+		return &httpclient.AuthConfig{Type: httpclient.AuthTypeAPIKey, HeaderKey: "X-API-Key"}
+	}
+	return &httpclient.AuthConfig{Type: httpclient.AuthTypeBearer}
+}
+
+func applyPassthroughDefaults(format llm.APIFormat, headers http.Header) {
+	if format == llm.APIFormatAnthropicMessage && headers.Get("Anthropic-Version") == "" {
+		headers.Set("Anthropic-Version", "2023-06-01")
 	}
 }
