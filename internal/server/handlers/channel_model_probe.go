@@ -38,6 +38,11 @@ type testModelRequest struct {
 }
 
 // testChannelModel 对单个渠道上的单个模型发起真实测试调用。
+//
+// NOTE: 本文件原名 channel_test.go,但 Go 工具链会把 *_test.go 一律视为
+// 单元测试文件并排除在普通 build 之外,会导致路由不在二进制中注册(404)。
+// 命名为 channel_model_probe.go 避开该后缀。
+//
 // NOTE(security): 当前端走 ChannelID 路径时仅传 ID 与模型名,Channel 数据从缓存读取,
 // 不要求前端把 ChannelKey 再发回来(虽然 listChannel 接口设计如此——见 /workspace/octopus安全泄露问题.md)。
 func testChannelModel(c *gin.Context) {

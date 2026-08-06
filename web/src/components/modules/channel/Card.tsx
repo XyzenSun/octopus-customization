@@ -8,7 +8,6 @@ import { CheckCircle2, DollarSign, Key, Layers, MessageSquare, XCircle } from 'l
 import { type StatsMetricsFormatted } from '@/api/endpoints/stats';
 import { type Channel, useEnableChannel } from '@/api/endpoints/channel';
 import { CardContent } from './CardContent';
-import { TestPanel } from './TestPanel';
 import { useTranslations } from 'next-intl';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/animate-ui/components/animate/tooltip';
 import { Switch } from '@/components/ui/switch';
@@ -152,13 +151,8 @@ export function Card({ channel, stats, layout = 'grid' }: { channel: Channel; st
             </MorphingDialogTrigger>
 
             <MorphingDialogContainer>
-                <MorphingDialogContent className="w-full md:max-w-5xl bg-card text-card-foreground rounded-3xl max-h-[90vh] overflow-hidden p-0">
-                    <div className="flex h-full max-h-[90vh] overflow-hidden">
-                        <div className="flex-1 min-w-0 px-4 py-2 overflow-y-auto">
-                            <CardContent channel={channel} stats={stats} />
-                        </div>
-                        <TestPanel channel={channel} />
-                    </div>
+                <MorphingDialogContent className="w-fit max-w-full bg-card text-card-foreground rounded-3xl max-h-[90vh] overflow-hidden p-0">
+                    <CardContent channel={channel} stats={stats} />
                 </MorphingDialogContent>
             </MorphingDialogContainer>
         </MorphingDialog>

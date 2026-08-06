@@ -23,6 +23,7 @@ import { type StatsMetricsFormatted } from '@/api/endpoints/stats';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { ChannelForm, type ChannelFormData } from './Form';
+import { TestPanel } from './TestPanel';
 import { formatMoney } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -163,26 +164,28 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
     };
 
     return (
-        <>
-            <MorphingDialogTitle>
-                <header className="mb-6 flex items-center justify-between">
-                    <h2 className="text-2xl font-bold text-card-foreground">
-                        {isEditing ? t('title.edit') : t('title.view')}
-                    </h2>
-                    <MorphingDialogClose
-                        className="relative top-0 right-0"
-                        variants={{
-                            initial: { opacity: 0, scale: 0.8 },
-                            animate: { opacity: 1, scale: 1 },
-                            exit: { opacity: 0, scale: 0.8 }
-                        }}
-                    />
-                </header>
-            </MorphingDialogTitle>
+        <div className="flex h-full max-h-[90vh] min-h-0 overflow-hidden">
+            {/* 主内容区:编辑和查看都保持 md:w-xl,与原布局一致 */}
+            <div className="w-full md:w-xl md:max-w-xl min-w-0 px-4 py-2 flex flex-col">
+                <MorphingDialogTitle>
+                    <header className="mb-6 flex items-center justify-between">
+                        <h2 className="text-2xl font-bold text-card-foreground">
+                            {isEditing ? t('title.edit') : t('title.view')}
+                        </h2>
+                        <MorphingDialogClose
+                            className="relative top-0 right-0"
+                            variants={{
+                                initial: { opacity: 0, scale: 0.8 },
+                                animate: { opacity: 1, scale: 1 },
+                                exit: { opacity: 0, scale: 0.8 }
+                            }}
+                        />
+                    </header>
+                </MorphingDialogTitle>
 
-            <MorphingDialogDescription>
-                <Tabs value={currentView}>
-                    <TabsContents>
+                <MorphingDialogDescription className="flex-1 min-h-0 overflow-y-auto">
+                    <Tabs value={currentView}>
+                        <TabsContents>
                         <TabsContent value="viewing" >
                             <div className="max-h-[60vh] overflow-y-auto space-y-4 sm:space-y-5">
                                 <dl className="grid gap-3 grid-cols-1 sm:grid-cols-3">
@@ -459,9 +462,11 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                                 idPrefix="channel"
                             />
                         </TabsContent>
-                    </TabsContents>
-                </Tabs>
-            </MorphingDialogDescription>
-        </>
+                        </TabsContents>
+                    </Tabs>
+                </MorphingDialogDescription>
+            </div>
+            {isEditing && <TestPanel formData={formData} />}
+        </div>
     );
 }
