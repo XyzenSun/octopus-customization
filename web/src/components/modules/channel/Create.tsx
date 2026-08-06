@@ -8,6 +8,7 @@ import {
 import { useCreateChannel, ChannelType, AutoGroupType } from '@/api/endpoints/channel';
 import { useTranslations } from 'next-intl';
 import { ChannelForm, type ChannelFormData } from './Form';
+import { TestPanel } from './TestPanel';
 
 export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
@@ -86,31 +87,34 @@ export function CreateDialogContent() {
     };
 
     return (
-        <div className="w-screen max-w-full md:max-w-xl h-full min-h-0 flex flex-col">
-            <MorphingDialogTitle className="shrink-0">
-                <header className="mb-6 flex items-center justify-between">
-                    <h2 className="text-2xl font-bold text-card-foreground">{t('dialogTitle')}</h2>
-                    <MorphingDialogClose
-                        className="relative right-0 top-0"
-                        variants={{
-                            initial: { opacity: 0, scale: 0.8 },
-                            animate: { opacity: 1, scale: 1 },
-                            exit: { opacity: 0, scale: 0.8 }
-                        }}
+        <div className="flex h-full max-h-[calc(100vh-2rem)] min-h-0 overflow-hidden">
+            <div className="w-screen max-w-full md:max-w-xl h-full min-h-0 flex flex-col">
+                <MorphingDialogTitle className="shrink-0">
+                    <header className="mb-6 flex items-center justify-between">
+                        <h2 className="text-2xl font-bold text-card-foreground">{t('dialogTitle')}</h2>
+                        <MorphingDialogClose
+                            className="relative right-0 top-0"
+                            variants={{
+                                initial: { opacity: 0, scale: 0.8 },
+                                animate: { opacity: 1, scale: 1 },
+                                exit: { opacity: 0, scale: 0.8 }
+                            }}
+                        />
+                    </header>
+                </MorphingDialogTitle>
+                <MorphingDialogDescription disableLayoutAnimation className="flex-1 min-h-0 overflow-auto">
+                    <ChannelForm
+                        formData={formData}
+                        onFormDataChange={setFormData}
+                        onSubmit={handleSubmit}
+                        isPending={createChannel.isPending}
+                        submitText={t('submit')}
+                        pendingText={t('submitting')}
+                        idPrefix="new-channel"
                     />
-                </header>
-            </MorphingDialogTitle>
-            <MorphingDialogDescription disableLayoutAnimation className="flex-1 min-h-0 overflow-auto">
-                <ChannelForm
-                    formData={formData}
-                    onFormDataChange={setFormData}
-                    onSubmit={handleSubmit}
-                    isPending={createChannel.isPending}
-                    submitText={t('submit')}
-                    pendingText={t('submitting')}
-                    idPrefix="new-channel"
-                />
-            </MorphingDialogDescription>
+                </MorphingDialogDescription>
+            </div>
+            <TestPanel formData={formData} />
         </div>
     );
 }

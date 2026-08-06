@@ -130,6 +130,36 @@ export type FetchModelRequest = {
 };
 
 /**
+ * 测试单个模型 - 请求体
+ *
+ * channel_id 与 channel 二选一:
+ *   - channel_id: 测已保存渠道 (后端从 DB/缓存取)
+ *   - channel: 测新建/编辑中未保存的渠道快照
+ * model + key_index 必填约束由后端检查;key_index 默认 0。
+ * timeout_ms 可选,默认 30s,上限 5min。
+ */
+export type TestModelRequest = {
+    channel_id?: number;
+    channel?: Channel | CreateChannelRequest;
+    model: string;
+    key_index?: number;
+    timeout_ms?: number;
+};
+
+/**
+ * 测试单个模型 - 响应
+ *
+ * status_code === 0 表示未拿到上游响应(网络错/DNS/超时),归入"失败"。
+ * error 仅在失败时存在,内容是后端已截断的简要上游错误。
+ */
+export type TestModelResult = {
+    model: string;
+    status_code: number;
+    delay_ms: number;
+    error?: string;
+};
+
+/**
  * 获取渠道列表 Hook
  * 
  * @example
@@ -360,6 +390,33 @@ export function useSyncChannel() {
         },
         onError: (error) => {
             logger.error('渠道同步失败:', error);
+        },
+    });
+}
+
+/**
+ * 测试单个渠道模型 Hook
+ *
+ * 不返回 react-query 状态(调用方需自行管理多个模型的状态聚合),
+ * 直接暴露 mutationFn 风格的 async 函数。
+ *
+ * @example
+ * const testModel = useTestChannelModel();
+ * const result = await testModel.mutateAsync({
+ *   channel_id: 7,
+ *   model: 'gpt-4o',
+ *   key_index: 0,
+ *   timeout_ms: 30000,
+ * });
+ * if (result.status_code === 200) console.log('OK');
+ */
+export function useTestChannelModel() {
+    return useMutation({
+        mutationFn: async (data: TestModelRequest) => {
+            return apiClient.post<TestModelResult>('/api/v1/channel/test-model', data);
+        },
+        onError: (error) => {
+            logger.error('模型测试失败:', error);
         },
     });
 }

@@ -571,6 +571,22 @@
             "matchRegex": "匹配正規",
             "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
             "remark": "備註"
+        },
+        "test": {
+            "title": "模型測試",
+            "timeoutLabel": "單次超時:",
+            "keyLabel": "測試 Key",
+            "modelCount": "{total} 個模型 (上游 {sync} + 自訂 {custom})",
+            "selectAll": "全選",
+            "deselectAll": "全不選",
+            "selectedCount": "已選 {selected} / {total}",
+            "batchTest": "批次測試",
+            "testing": "測試中…",
+            "testButtonTitle": "測試此模型",
+            "statusUntested": "未測",
+            "statusNetwork": "網路",
+            "noKeys": "無可用金鑰",
+            "noModels": "請先新增模型"
         }
     }
 }

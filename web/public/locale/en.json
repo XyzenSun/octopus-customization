@@ -571,6 +571,22 @@
             "matchRegex": "Match Regex",
             "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
             "remark": "Remark"
+        },
+        "test": {
+            "title": "Model Test",
+            "timeoutLabel": "Timeout:",
+            "keyLabel": "Test Key",
+            "modelCount": "{total} models (synced {sync} + custom {custom})",
+            "selectAll": "Select All",
+            "deselectAll": "Deselect All",
+            "selectedCount": "Selected {selected} / {total}",
+            "batchTest": "Batch Test",
+            "testing": "Testing…",
+            "testButtonTitle": "Test this model",
+            "statusUntested": "Not tested",
+            "statusNetwork": "NET",
+            "noKeys": "No available keys",
+            "noModels": "Add a model first"
         }
     }
 }
