@@ -359,6 +359,10 @@
                 "label": "Per-Log Content Limit",
                 "hint": "Unit: MiB. Skip the log when its combined request and response content exceeds this size; -1 = unlimited"
             },
+            "maxDimidiateTimes": {
+                "label": "Halve GC Trigger Count",
+                "hint": "After N memory-log halvings, trigger a GC; -1 = disable periodic GC, must be 1 or greater"
+            },
             "memoryEnabled": {
                 "label": "Enable Memory Logging",
                 "hint": "Disable to stop recording any logs, including real-time queries"
