@@ -355,6 +355,10 @@
                 "label": "内存缓存上限",
                 "hint": "关闭数据库日志时生效，0 表示不记录任何日志，大于 0 表示超过此数量后保留最新的一半"
             },
+            "maxContentSize": {
+                "label": "单条日志正文上限",
+                "hint": "单位 MiB，请求与响应正文合计超过此大小时不记录该日志，-1 表示不限制"
+            },
             "memoryEnabled": {
                 "label": "启用日志记录到内存",
                 "hint": "关闭后将不记录任何日志，包括实时查询"
@@ -571,6 +575,22 @@
             "matchRegex": "匹配正则",
             "matchRegexPlaceholder": "可选：用于匹配请求模型名称的正则表达式",
             "remark": "备注"
+        },
+        "test": {
+            "title": "模型测试",
+            "timeoutLabel": "单次超时:",
+            "keyLabel": "测试 Key",
+            "modelCount": "{total} 个模型 (上游 {sync} + 自定义 {custom})",
+            "selectAll": "全选",
+            "deselectAll": "全不选",
+            "selectedCount": "已选 {selected} / {total}",
+            "batchTest": "批量测试",
+            "testing": "测试中…",
+            "testButtonTitle": "测试此模型",
+            "statusUntested": "未测",
+            "statusNetwork": "网络",
+            "noKeys": "无可用密钥",
+            "noModels": "请先添加模型"
         }
     }
 }

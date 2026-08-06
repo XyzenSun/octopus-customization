@@ -355,6 +355,10 @@
                 "label": "記憶體快取上限",
                 "hint": "關閉資料庫日誌時生效，0 表示不記錄任何日誌，大於 0 表示超過此數量後保留最新的一半"
             },
+            "maxContentSize": {
+                "label": "單條日誌正文上限",
+                "hint": "單位 MiB，請求與回應正文合計超過此大小時不記錄該日誌，-1 表示不限制"
+            },
             "memoryEnabled": {
                 "label": "啟用日誌記錄到記憶體",
                 "hint": "關閉後將不記錄任何日誌，包括即時查詢"
@@ -571,6 +575,22 @@
             "matchRegex": "匹配正規",
             "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
             "remark": "備註"
+        },
+        "test": {
+            "title": "模型測試",
+            "timeoutLabel": "單次超時:",
+            "keyLabel": "測試 Key",
+            "modelCount": "{total} 個模型 (上游 {sync} + 自訂 {custom})",
+            "selectAll": "全選",
+            "deselectAll": "全不選",
+            "selectedCount": "已選 {selected} / {total}",
+            "batchTest": "批次測試",
+            "testing": "測試中…",
+            "testButtonTitle": "測試此模型",
+            "statusUntested": "未測",
+            "statusNetwork": "網路",
+            "noKeys": "無可用金鑰",
+            "noModels": "請先新增模型"
         }
     }
 }

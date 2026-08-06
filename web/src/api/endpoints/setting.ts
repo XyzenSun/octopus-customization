@@ -20,6 +20,7 @@ export const SettingKey = {
     RelayLogKeepPeriod: 'relay_log_keep_period',
     RelayLogFlushSize: 'relay_log_flush_size',
     RelayLogMemoryCacheSize: 'relay_log_memory_cache_size',
+    RelayLogMaxContentSizeMB: 'relay_log_max_content_size_mb',
     CORSAllowOrigins: 'cors_allow_origins',
     CircuitBreakerThreshold: 'circuit_breaker_threshold',
     CircuitBreakerCooldown: 'circuit_breaker_cooldown',

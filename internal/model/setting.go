@@ -10,24 +10,26 @@ type SettingKey string
 
 const (
 	SettingKeyProxyURL                  SettingKey = "proxy_url"
-	SettingKeyStatsSaveInterval         SettingKey = "stats_save_interval"          // 将统计信息写入数据库的周期(分钟)
-	SettingKeyModelInfoUpdateInterval   SettingKey = "model_info_update_interval"   // 模型信息更新间隔(小时)
-	SettingKeySyncLLMInterval           SettingKey = "sync_llm_interval"            // LLM 同步间隔(小时)
-	SettingKeyRelayLogKeepPeriod        SettingKey = "relay_log_keep_period"        // 日志保存时间范围(天)
-	SettingKeyRelayLogKeepEnabled       SettingKey = "relay_log_keep_enabled"       // 是否保留历史日志
-	SettingKeyRelayLogFlushSize         SettingKey = "relay_log_flush_size"         // 启用日志保存时的刷写上限
-	SettingKeyRelayLogMemoryCacheSize   SettingKey = "relay_log_memory_cache_size"  // 仅内存时的缓存上限
-	SettingKeyCORSAllowOrigins          SettingKey = "cors_allow_origins"           // 跨域白名单(逗号分隔, 如 "example.com,example2.com"). 为空不允许跨域, "*"允许所有
-	SettingKeyCircuitBreakerThreshold   SettingKey = "circuit_breaker_threshold"    // 熔断触发阈值（连续失败次数）
-	SettingKeyCircuitBreakerCooldown    SettingKey = "circuit_breaker_cooldown"     // 熔断基础冷却时间（秒）
-	SettingKeyCircuitBreakerMaxCooldown SettingKey = "circuit_breaker_max_cooldown" // 熔断最大冷却时间（秒），指数退避上限
-	SettingKeyCircuitBreakerEnabled     SettingKey = "circuit_breaker_enabled"      // 熔断器全局开关
+	SettingKeyStatsSaveInterval         SettingKey = "stats_save_interval"           // 将统计信息写入数据库的周期(分钟)
+	SettingKeyModelInfoUpdateInterval   SettingKey = "model_info_update_interval"    // 模型信息更新间隔(小时)
+	SettingKeySyncLLMInterval           SettingKey = "sync_llm_interval"             // LLM 同步间隔(小时)
+	SettingKeyRelayLogKeepPeriod        SettingKey = "relay_log_keep_period"         // 日志保存时间范围(天)
+	SettingKeyRelayLogKeepEnabled       SettingKey = "relay_log_keep_enabled"        // 是否保留历史日志
+	SettingKeyRelayLogFlushSize         SettingKey = "relay_log_flush_size"          // 启用日志保存时的刷写上限
+	SettingKeyRelayLogMemoryCacheSize   SettingKey = "relay_log_memory_cache_size"   // 仅内存时的缓存上限
+	SettingKeyRelayLogMaxContentSizeMB  SettingKey = "relay_log_max_content_size_mb" // 单条日志请求与响应正文合计上限（MiB）
+	SettingKeyCORSAllowOrigins          SettingKey = "cors_allow_origins"            // 跨域白名单(逗号分隔, 如 "example.com,example2.com"). 为空不允许跨域, "*"允许所有
+	SettingKeyCircuitBreakerThreshold   SettingKey = "circuit_breaker_threshold"     // 熔断触发阈值（连续失败次数）
+	SettingKeyCircuitBreakerCooldown    SettingKey = "circuit_breaker_cooldown"      // 熔断基础冷却时间（秒）
+	SettingKeyCircuitBreakerMaxCooldown SettingKey = "circuit_breaker_max_cooldown"  // 熔断最大冷却时间（秒），指数退避上限
+	SettingKeyCircuitBreakerEnabled     SettingKey = "circuit_breaker_enabled"       // 熔断器全局开关
 )
 
 // 默认值常量
 const (
-	DefaultRelayLogFlushSize       = 50  // 默认刷写上限
-	DefaultRelayLogMemoryCacheSize = 100 // 默认内存缓存上限
+	DefaultRelayLogFlushSize        = 50  // 默认刷写上限
+	DefaultRelayLogMemoryCacheSize  = 100 // 默认内存缓存上限
+	DefaultRelayLogMaxContentSizeMB = 2   // 默认单条日志正文上限（MiB）
 )
 
 type Setting struct {
@@ -46,6 +48,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyRelayLogKeepEnabled, Value: "true"},      // 默认保留历史日志
 		{Key: SettingKeyRelayLogFlushSize, Value: "50"},          // 默认刷写上限50条
 		{Key: SettingKeyRelayLogMemoryCacheSize, Value: "100"},   // 默认内存缓存100条
+		{Key: SettingKeyRelayLogMaxContentSizeMB, Value: "2"},    // 默认单条日志正文上限2MiB
 		{Key: SettingKeyCircuitBreakerThreshold, Value: "5"},     // 默认连续失败5次触发熔断
 		{Key: SettingKeyCircuitBreakerCooldown, Value: "60"},     // 默认基础冷却60秒
 		{Key: SettingKeyCircuitBreakerMaxCooldown, Value: "600"}, // 默认最大冷却600秒（10分钟）
@@ -55,6 +58,15 @@ func DefaultSettings() []Setting {
 
 func (s *Setting) Validate() error {
 	switch s.Key {
+	case SettingKeyRelayLogMaxContentSizeMB:
+		value, err := strconv.Atoi(s.Value)
+		if err != nil {
+			return fmt.Errorf("relay log max content size must be an integer")
+		}
+		if value < -1 {
+			return fmt.Errorf("relay log max content size must be -1 or greater")
+		}
+		return nil
 	case SettingKeyModelInfoUpdateInterval, SettingKeySyncLLMInterval, SettingKeyRelayLogKeepPeriod,
 		SettingKeyCircuitBreakerThreshold, SettingKeyCircuitBreakerCooldown, SettingKeyCircuitBreakerMaxCooldown,
 		SettingKeyRelayLogFlushSize, SettingKeyRelayLogMemoryCacheSize:

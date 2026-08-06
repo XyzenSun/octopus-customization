@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"runtime"
 	"sync"
 	"time"
 
@@ -11,10 +12,16 @@ import (
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/bestruirui/octopus/internal/utils/snowflake"
+	"gorm.io/gorm"
 )
 
 var relayLogCache = make([]model.RelayLog, 0, model.DefaultRelayLogFlushSize)
 var relayLogCacheLock sync.Mutex
+
+// memory_log_dimidiate_times 记录仅内存模式下日志折半发生的次数；
+// 每触发 16 次折半后主动调用一次 runtime.GC，及时回收旧日志正文占用的堆内存。
+// 计数更新复用 relayLogCacheLock，无需额外加锁。
+var memory_log_dimidiate_times int
 
 var relayLogFlushLock sync.Mutex
 
@@ -146,6 +153,7 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 
 	relayLogCacheLock.Lock()
 	relayLogCache = append(relayLogCache, relayLog)
+	needMemoryLogGC := false
 
 	if enabled {
 		// 数据库模式：maxSize = 0 表示实时写入，> 0 表示达到阈值后批量写入
@@ -162,10 +170,22 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 				newCache := make([]model.RelayLog, keepSize, maxSize)
 				copy(newCache, relayLogCache[len(relayLogCache)-keepSize:])
 				relayLogCache = newCache
+
+				memory_log_dimidiate_times++
+				if memory_log_dimidiate_times > 15 {
+					memory_log_dimidiate_times = 0
+					needMemoryLogGC = true
+				}
 			}
 		}
 	}
 	relayLogCacheLock.Unlock()
+
+	// 在第 16 次折半后主动触发一次 GC，及时回收被淘汰旧日志的正文内存。
+	if needMemoryLogGC {
+		runtime.GC()
+	}
+
 	return nil
 }
 
@@ -222,6 +242,8 @@ func relayLogCleanup(ctx context.Context) error {
 	}
 
 	cutoffTime := time.Now().Add(-time.Duration(keepPeriod) * 24 * time.Hour).Unix()
+	relayLogFlushLock.Lock()
+	defer relayLogFlushLock.Unlock()
 	return db.GetDB().WithContext(ctx).Where("time < ?", cutoffTime).Delete(&model.RelayLog{}).Error
 }
 
@@ -293,8 +315,15 @@ func RelayLogList(ctx context.Context, startTime, endTime *int, page, pageSize i
 }
 
 func RelayLogClear(ctx context.Context) error {
+	relayLogFlushLock.Lock()
+	defer relayLogFlushLock.Unlock()
+
+	if err := db.GetDB().WithContext(ctx).Session(&gorm.Session{AllowGlobalUpdate: true}).Delete(&model.RelayLog{}).Error; err != nil {
+		return err
+	}
+
 	relayLogCacheLock.Lock()
 	relayLogCache = make([]model.RelayLog, 0, model.DefaultRelayLogFlushSize)
 	relayLogCacheLock.Unlock()
-	return db.GetDB().WithContext(ctx).Where("1 = 1").Delete(&model.RelayLog{}).Error
+	return nil
 }
