@@ -2,7 +2,9 @@ package relay
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/streams"
 	"github.com/looplj/axonhub/llm/transformer"
+	"github.com/tidwall/sjson"
 )
 
 const passthroughMetadataKey = "octopus_passthrough_event"
@@ -23,6 +26,7 @@ type passthroughTransformer struct {
 	rawRequest       *httpclient.Request
 	inbound          transformer.Inbound
 	outbound         transformer.Outbound
+	requestModel     string
 	responseCaptured bool
 	responseStatus   int
 	responseHeaders  http.Header
@@ -33,14 +37,33 @@ func (ra *relayAttempt) canPassthrough() bool {
 	if ra == nil || ra.channel == nil || ra.internalRequest == nil || ra.internalRequest.RawRequest == nil {
 		return false
 	}
-	if ra.inboundType != ra.channel.Type || ra.metrics.RequestModel != ra.internalRequest.Model {
+	if ra.inboundType != ra.channel.Type {
 		return false
 	}
 	if ra.channel.ParamOverride != nil && strings.TrimSpace(*ra.channel.ParamOverride) != "" {
 		return false
 	}
+	for _, header := range ra.channel.CustomHeader {
+		if strings.TrimSpace(header.HeaderKey) != "" {
+			return false
+		}
+	}
+	if ra.metrics.RequestModel != ra.internalRequest.Model && !isPassthroughJSONRequest(ra.internalRequest.RawRequest) {
+		return false
+	}
 	_, _, err := passthroughEndpoint(ra.inboundType, ra.channel.GetBaseUrl())
 	return err == nil
+}
+
+func isPassthroughJSONRequest(request *httpclient.Request) bool {
+	if request == nil {
+		return false
+	}
+	contentType := request.ContentType
+	if contentType == "" && request.Headers != nil {
+		contentType = request.Headers.Get("Content-Type")
+	}
+	return strings.Contains(strings.ToLower(contentType), "application/json")
 }
 
 func newPassthroughTransformer(ra *relayAttempt) (*passthroughTransformer, error) {
@@ -51,12 +74,13 @@ func newPassthroughTransformer(ra *relayAttempt) (*passthroughTransformer, error
 		return nil, err
 	}
 	return &passthroughTransformer{
-		format:     ra.inboundType,
-		baseURL:    ra.channel.GetBaseUrl(),
-		apiKey:     ra.usedKey.ChannelKey,
-		rawRequest: ra.internalRequest.RawRequest,
-		inbound:    ra.inAdapter,
-		outbound:   ra.outAdapter,
+		format:       ra.inboundType,
+		baseURL:      ra.channel.GetBaseUrl(),
+		apiKey:       ra.usedKey.ChannelKey,
+		rawRequest:   ra.internalRequest.RawRequest,
+		requestModel: ra.metrics.RequestModel,
+		inbound:      ra.inAdapter,
+		outbound:     ra.outAdapter,
 	}, nil
 }
 
@@ -84,13 +108,21 @@ func (t *passthroughTransformer) TransformRequest(ctx context.Context, request *
 	}
 	applyPassthroughDefaults(t.format, headers)
 
+	body := append([]byte(nil), t.rawRequest.Body...)
+	if t.requestModel != "" && request.Model != "" && request.Model != t.requestModel {
+		body, err = sjson.SetBytes(body, "model", request.Model)
+		if err != nil {
+			return nil, fmt.Errorf("failed to rewrite passthrough model: %w", err)
+		}
+	}
+
 	return &httpclient.Request{
 		Method:      t.rawRequest.Method,
 		URL:         upstreamURL,
 		Query:       query,
 		Headers:     headers,
 		ContentType: t.rawRequest.ContentType,
-		Body:        append([]byte(nil), t.rawRequest.Body...),
+		Body:        body,
 		Auth:        auth,
 		RequestType: request.RequestType.String(),
 		APIFormat:   t.format.String(),
@@ -115,17 +147,87 @@ func (t *passthroughTransformer) TransformResponse(ctx context.Context, response
 	t.responseHeaders = response.Headers.Clone()
 	t.responseBody = append([]byte(nil), response.Body...)
 
-	parsed, err := t.outbound.TransformResponse(ctx, response)
-	if err != nil || parsed == nil {
-		return &llm.Response{
-			Object:    "passthrough",
-			APIFormat: t.format,
-			Choices: []llm.Choice{{
-				Message: &llm.Message{Content: llm.MessageContent{Content: new("passthrough")}},
-			}},
-		}, nil
+	return &llm.Response{
+		Object:    "passthrough",
+		APIFormat: t.format,
+		Usage:     passthroughUsage(t.format, response.Body),
+		Choices: []llm.Choice{{
+			Message: &llm.Message{Content: llm.MessageContent{Content: new("passthrough")}},
+		}},
+	}, nil
+}
+
+func passthroughUsage(format llm.APIFormat, body []byte) *llm.Usage {
+	var envelope struct {
+		Usage json.RawMessage `json:"usage"`
 	}
-	return parsed, nil
+	if json.Unmarshal(body, &envelope) != nil || len(envelope.Usage) == 0 || string(envelope.Usage) == "null" {
+		return nil
+	}
+
+	switch format {
+	case llm.APIFormatAnthropicMessage:
+		var usage struct {
+			InputTokens              int64 `json:"input_tokens"`
+			OutputTokens             int64 `json:"output_tokens"`
+			CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+			CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+			CacheCreation            struct {
+				Ephemeral5mInputTokens int64 `json:"ephemeral_5m_input_tokens"`
+				Ephemeral1hInputTokens int64 `json:"ephemeral_1h_input_tokens"`
+			} `json:"cache_creation"`
+		}
+		if json.Unmarshal(envelope.Usage, &usage) != nil {
+			return nil
+		}
+		promptTokens := usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens
+		result := &llm.Usage{
+			PromptTokens:     promptTokens,
+			CompletionTokens: usage.OutputTokens,
+			TotalTokens:      promptTokens + usage.OutputTokens,
+		}
+		if usage.CacheCreationInputTokens > 0 || usage.CacheReadInputTokens > 0 {
+			result.PromptTokensDetails = &llm.PromptTokensDetails{
+				CachedTokens:           usage.CacheReadInputTokens,
+				WriteCachedTokens:      usage.CacheCreationInputTokens,
+				WriteCached5MinTokens:  usage.CacheCreation.Ephemeral5mInputTokens,
+				WriteCached1HourTokens: usage.CacheCreation.Ephemeral1hInputTokens,
+			}
+		}
+		return result
+	case llm.APIFormatOpenAIResponse:
+		var usage struct {
+			InputTokens       int64 `json:"input_tokens"`
+			OutputTokens      int64 `json:"output_tokens"`
+			TotalTokens       int64 `json:"total_tokens"`
+			InputTokenDetails struct {
+				CachedTokens int64 `json:"cached_tokens"`
+			} `json:"input_tokens_details"`
+			OutputTokenDetails struct {
+				ReasoningTokens int64 `json:"reasoning_tokens"`
+			} `json:"output_tokens_details"`
+		}
+		if json.Unmarshal(envelope.Usage, &usage) != nil {
+			return nil
+		}
+		return &llm.Usage{
+			PromptTokens:     usage.InputTokens,
+			CompletionTokens: usage.OutputTokens,
+			TotalTokens:      usage.TotalTokens,
+			PromptTokensDetails: &llm.PromptTokensDetails{
+				CachedTokens: usage.InputTokenDetails.CachedTokens,
+			},
+			CompletionTokensDetails: &llm.CompletionTokensDetails{
+				ReasoningTokens: usage.OutputTokenDetails.ReasoningTokens,
+			},
+		}
+	default:
+		var usage llm.Usage
+		if json.Unmarshal(envelope.Usage, &usage) != nil {
+			return nil
+		}
+		return &usage
+	}
 }
 
 func (t *passthroughTransformer) TransformStream(ctx context.Context, request *httpclient.Request, stream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*llm.Response], error) {

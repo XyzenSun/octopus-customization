@@ -115,19 +115,11 @@ func passthroughEndpoint(format llm.APIFormat, baseURL string) (string, *httpcli
 		return "", nil, fmt.Errorf("API format %s does not support passthrough", format)
 	}
 
-	rawURL := strings.HasSuffix(baseURL, "##")
-	baseURL = strings.TrimSuffix(baseURL, "##")
-	if rawURL {
-		return strings.TrimRight(baseURL, "/"), passthroughAuth(format), nil
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return "", nil, fmt.Errorf("base URL is empty")
 	}
-
-	// 与 axonhub transformer 的单 # 约定保持一致：跳过默认版本号，但仍追加 endpoint。
-	skipVersion := strings.HasSuffix(baseURL, "#")
-	baseURL = strings.TrimSuffix(baseURL, "#")
-	if skipVersion {
-		return strings.TrimRight(baseURL, "/") + path, passthroughAuth(format), nil
-	}
-	return transformer.NormalizeBaseURL(baseURL, "v1") + path, passthroughAuth(format), nil
+	return baseURL + path, passthroughAuth(format), nil
 }
 
 func passthroughAuth(format llm.APIFormat) *httpclient.AuthConfig {

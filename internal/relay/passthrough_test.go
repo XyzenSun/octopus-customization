@@ -67,9 +67,12 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 	requestBody := []byte(`{"model":"model-a","messages":[{"role":"user","content":"hello"}]}`)
 	base := &relayAttempt{
 		relayRun: &relayRun{
-			inboundType:     llm.APIFormatOpenAIChatCompletion,
-			internalRequest: &llm.Request{Model: "model-a", RawRequest: &httpclient.Request{Body: requestBody}},
-			metrics:         &RelayMetrics{RequestModel: "model-a"},
+			inboundType: llm.APIFormatOpenAIChatCompletion,
+			internalRequest: &llm.Request{Model: "model-a", RawRequest: &httpclient.Request{
+				Headers: http.Header{"Content-Type": []string{"application/json"}},
+				Body:    requestBody,
+			}},
+			metrics: &RelayMetrics{RequestModel: "model-a"},
 		},
 		channel: &dbmodel.Channel{
 			Type:     llm.APIFormatOpenAIChatCompletion,
@@ -89,8 +92,8 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 		internalRequest: &mappedRequest,
 		metrics:         base.metrics,
 	}
-	if mapped.canPassthrough() {
-		t.Fatal("mapped model must use transformed path")
+	if !mapped.canPassthrough() {
+		t.Fatal("same-protocol model mapping should rewrite only model and passthrough")
 	}
 
 	override := `{"temperature":0}`
@@ -100,6 +103,14 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 	withOverride.channel = &channelWithOverride
 	if withOverride.canPassthrough() {
 		t.Fatal("param override must use transformed path")
+	}
+
+	withHeader := *base
+	channelWithHeader := *base.channel
+	channelWithHeader.CustomHeader = []dbmodel.CustomHeader{{HeaderKey: "X-Custom", HeaderValue: "value"}}
+	withHeader.channel = &channelWithHeader
+	if withHeader.canPassthrough() {
+		t.Fatal("custom header must use transformed path")
 	}
 }
 
@@ -117,10 +128,11 @@ func TestPassthroughTransformerPreservesRequest(t *testing.T) {
 		Body:  body,
 	}
 	transformer := &passthroughTransformer{
-		format:     llm.APIFormatOpenAIChatCompletion,
-		baseURL:    "https://example.com",
-		apiKey:     "upstream-key",
-		rawRequest: raw,
+		format:       llm.APIFormatOpenAIChatCompletion,
+		baseURL:      "https://example.com/v1",
+		apiKey:       "upstream-key",
+		rawRequest:   raw,
+		requestModel: "model-a",
 	}
 
 	got, err := transformer.TransformRequest(context.Background(), &llm.Request{RequestType: llm.RequestTypeChat})
@@ -134,28 +146,20 @@ func TestPassthroughTransformerPreservesRequest(t *testing.T) {
 		t.Fatalf("URL = %q", got.URL)
 	}
 
-	rawURL, auth, err := passthroughEndpoint(llm.APIFormatOpenAIChatCompletion, "https://example.com/custom##")
+	mapped, err := transformer.TransformRequest(context.Background(), &llm.Request{Model: "model-b", RequestType: llm.RequestTypeChat})
 	if err != nil {
-		t.Fatalf("passthroughEndpoint() error = %v", err)
+		t.Fatalf("TransformRequest(mapped model) error = %v", err)
 	}
-	if rawURL != "https://example.com/custom" || auth.Type != httpclient.AuthTypeBearer {
-		t.Fatalf("unexpected raw endpoint/auth: %q %+v", rawURL, auth)
+	if string(mapped.Body) != "{\n  \"model\": \"model-b\",\n  \"extra\": {\"preserve\": true}\n}" {
+		t.Fatalf("mapped body changed unexpectedly:\n%s", mapped.Body)
 	}
 
-	versionlessURL, _, err := passthroughEndpoint(llm.APIFormatOpenAIChatCompletion, "https://example.com/custom#")
-	if err != nil {
-		t.Fatalf("versionless passthroughEndpoint() error = %v", err)
-	}
-	if versionlessURL != "https://example.com/custom/chat/completions" {
-		t.Fatalf("unexpected versionless endpoint: %q", versionlessURL)
-	}
-
-	_, anthropicAuth, err := passthroughEndpoint(llm.APIFormatAnthropicMessage, "https://api.anthropic.com")
+	anthropicURL, anthropicAuth, err := passthroughEndpoint(llm.APIFormatAnthropicMessage, "https://api.anthropic.com/v1")
 	if err != nil {
 		t.Fatalf("anthropic passthroughEndpoint() error = %v", err)
 	}
-	if anthropicAuth.Type != httpclient.AuthTypeAPIKey || anthropicAuth.HeaderKey != "X-API-Key" {
-		t.Fatalf("unexpected anthropic auth: %+v", anthropicAuth)
+	if anthropicURL != "https://api.anthropic.com/v1/messages" || anthropicAuth.Type != httpclient.AuthTypeAPIKey || anthropicAuth.HeaderKey != "X-API-Key" {
+		t.Fatalf("unexpected anthropic endpoint/auth: %q %+v", anthropicURL, anthropicAuth)
 	}
 	if got.Headers.Get("Authorization") != "" {
 		t.Fatal("client authorization header leaked to upstream request")
@@ -181,14 +185,14 @@ func TestPassthroughTransformerPreservesResponseAndStream(t *testing.T) {
 		inbound:  passthroughTestInbound{},
 		outbound: passthroughTestOutbound{format: llm.APIFormatOpenAIChatCompletion, usage: usage},
 	}
-	body := []byte("{\n  \"id\": \"raw-response\",\n  \"custom\": true\n}")
+	body := []byte("{\n  \"id\": \"raw-response\",\n  \"custom\": true,\n  \"usage\": {\"prompt_tokens\": 3, \"completion_tokens\": 5, \"total_tokens\": 8}\n}")
 	headers := http.Header{"Content-Type": []string{"application/json"}, "X-Upstream": []string{"keep"}}
 
 	parsed, err := transformer.TransformResponse(context.Background(), &httpclient.Response{StatusCode: http.StatusCreated, Headers: headers, Body: body})
 	if err != nil {
 		t.Fatalf("TransformResponse() error = %v", err)
 	}
-	if parsed.Usage != usage {
+	if parsed.Usage == nil || parsed.Usage.PromptTokens != usage.PromptTokens || parsed.Usage.CompletionTokens != usage.CompletionTokens || parsed.Usage.TotalTokens != usage.TotalTokens {
 		t.Fatal("usage parser result was not preserved")
 	}
 	final, err := transformer.TransformResponseInbound(context.Background(), parsed)
@@ -319,7 +323,7 @@ func TestPassthroughPipelinePreservesRawRequestAndResponse(t *testing.T) {
 	usage := &llm.Usage{PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5}
 	passthrough := &passthroughTransformer{
 		format:     llm.APIFormatOpenAIChatCompletion,
-		baseURL:    upstream.URL + "/chat/completions##",
+		baseURL:    upstream.URL + "/v1",
 		apiKey:     "upstream-key",
 		rawRequest: raw,
 		inbound:    passthroughTestInbound{},
@@ -349,7 +353,7 @@ func TestPassthroughPipelineKeepsFirstTokenTimeout(t *testing.T) {
 	request := &llm.Request{Model: "model-a", RequestType: llm.RequestTypeChat, Stream: &stream, RawRequest: raw}
 	passthrough := &passthroughTransformer{
 		format:     llm.APIFormatOpenAIChatCompletion,
-		baseURL:    "https://example.com",
+		baseURL:    "https://example.com/v1",
 		apiKey:     "upstream-key",
 		rawRequest: raw,
 		inbound:    passthroughTestInbound{},
