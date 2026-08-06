@@ -8,6 +8,7 @@ import {
     type TestModelResult,
 } from '@/api/endpoints/channel';
 import type { ChannelFormData } from './Form';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'client_error' | 'server_error' | 'network_error';
@@ -204,9 +205,9 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
         if (!state || state.status === 'idle' || state.status === 'testing') return null;
         if (state.status === 'network_error') {
             return (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-red-500/15 text-red-700 dark:text-red-400">
+                <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-mono bg-red-500/15 text-red-700 dark:text-red-400">
                     {t('statusNetwork')}
-                </span>
+                </Badge>
             );
         }
         const cls = state.status === 'ok'
@@ -215,9 +216,9 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
                 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
                 : 'bg-red-500/15 text-red-700 dark:text-red-400';
         return (
-            <span className={cn('px-1.5 py-0.5 rounded text-[10px] font-mono', cls)} title={state.error}>
+            <Badge variant="secondary" className={cn('h-5 px-1.5 text-[10px] font-mono', cls)} title={state.error}>
                 {state.status_code}
-            </span>
+            </Badge>
         );
     };
 
@@ -245,7 +246,7 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
                         max={300}
                         value={timeoutSec}
                         onChange={(e) => setTimeoutSec(Math.max(1, Math.min(300, Number(e.target.value) || 30)))}
-                        className="w-12 px-1 py-0.5 text-xs bg-background border border-border rounded text-right"
+                        className="w-12 px-1 py-0.5 text-xs bg-background border border-border rounded-md text-right"
                         disabled={isEmbedding}
                     />
                     <span>s</span>
@@ -265,7 +266,7 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
                         value={effectiveKeyIndex}
                         onChange={(e) => setKeyIndex(Number(e.target.value))}
                         disabled={isEmbedding || keys.length === 0}
-                        className="w-full appearance-none bg-background border border-border rounded px-2 py-1 text-xs font-mono pr-6 truncate"
+                        className="w-full appearance-none bg-background border border-border rounded-md px-2 py-1 text-xs font-mono pr-6 truncate"
                     >
                         {keys.length === 0 && <option value={0}>{t('noKeys')}</option>}
                         {keys.map((k, idx) => {
@@ -309,7 +310,7 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
                                     type="button"
                                     onClick={() => runOne(m)}
                                     disabled={isEmbedding || !hasValidKey || state?.status === 'testing'}
-                                    className="p-0.5 rounded hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                                    className="p-1 rounded-md hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed shrink-0 transition-colors"
                                     title={t('testButtonTitle')}
                                 >
                                     <Play className="size-3 text-foreground" />
@@ -333,7 +334,7 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
                         type="button"
                         onClick={toggleSelectAll}
                         disabled={isEmbedding || modelInfo.all.length === 0}
-                        className="px-2 py-1 rounded border border-border bg-background hover:bg-accent disabled:opacity-40"
+                        className="px-2 py-1 rounded-md border border-border bg-background hover:bg-accent disabled:opacity-40 transition-colors"
                     >
                         {selected.size === modelInfo.all.length ? t('deselectAll') : t('selectAll')}
                     </button>
@@ -341,7 +342,7 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
                         type="button"
                         onClick={runBatch}
                         disabled={isEmbedding || !hasValidKey || isBatch || selected.size === 0}
-                        className="px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+                        className="px-2 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors"
                     >
                         {isBatch ? t('testing') : t('batchTest')}
                     </button>
