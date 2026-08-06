@@ -355,6 +355,10 @@
                 "label": "Memory Cache Limit",
                 "hint": "When database logging is disabled, 0 = no logs recorded, > 0 = keep the most recent half when exceeding this limit"
             },
+            "maxContentSize": {
+                "label": "Per-Log Content Limit",
+                "hint": "Unit: MiB. Skip the log when its combined request and response content exceeds this size; -1 = unlimited"
+            },
             "memoryEnabled": {
                 "label": "Enable Memory Logging",
                 "hint": "Disable to stop recording any logs, including real-time queries"

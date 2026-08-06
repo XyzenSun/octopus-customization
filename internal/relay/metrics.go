@@ -147,7 +147,24 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		relayLog.Cost = m.Stats.InputCost + m.Stats.OutputCost
 	}
 
-	relayLog.RequestContent = m.requestContent()
+	maxContentSizeMB, settingErr := op.SettingGetInt(model.SettingKeyRelayLogMaxContentSizeMB)
+	if settingErr != nil || maxContentSizeMB < -1 {
+		maxContentSizeMB = model.DefaultRelayLogMaxContentSizeMB
+	}
+	responseContentSize := int64(len(m.InternalResponse))
+	if relayLogContentExceedsLimit(responseContentSize, maxContentSizeMB) {
+		log.Warnf("relay log skipped: response content size=%d bytes exceeds limit=%d MiB", responseContentSize, maxContentSizeMB)
+		return
+	}
+
+	requestContent := m.requestContent()
+	contentSize := int64(len(requestContent)) + responseContentSize
+	if relayLogContentExceedsLimit(contentSize, maxContentSizeMB) {
+		log.Warnf("relay log skipped: content size=%d bytes exceeds limit=%d MiB", contentSize, maxContentSizeMB)
+		return
+	}
+
+	relayLog.RequestContent = string(requestContent)
 	if len(m.InternalResponse) > 0 {
 		relayLog.ResponseContent = string(m.InternalResponse)
 	}
@@ -160,35 +177,47 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 	}
 }
 
-func (m *RelayMetrics) requestContent() string {
+func relayLogContentExceedsLimit(contentSize int64, maxContentSizeMB int) bool {
+	if maxContentSizeMB == -1 {
+		return false
+	}
+	const bytesPerMiB int64 = 1024 * 1024
+	maxSize := int64(maxContentSizeMB)
+	if maxSize > (1<<63-1)/bytesPerMiB {
+		return false
+	}
+	return contentSize > maxSize*bytesPerMiB
+}
+
+func (m *RelayMetrics) requestContent() []byte {
 	if m.InternalRequest == nil {
-		return ""
+		return nil
 	}
 
 	reqJSON, err := json.Marshal(filterRequestForLog(m.InternalRequest))
 	if err != nil {
-		return ""
+		return nil
 	}
 	if m.ParamOverride == "" {
-		return string(reqJSON)
+		return reqJSON
 	}
 
 	var reqMap map[string]any
 	if err := json.Unmarshal(reqJSON, &reqMap); err != nil {
-		return string(reqJSON)
+		return reqJSON
 	}
 	var override map[string]any
 	if err := json.Unmarshal([]byte(m.ParamOverride), &override); err != nil {
-		return string(reqJSON)
+		return reqJSON
 	}
 
 	// 日志里的请求体要反映本次实际发给上游的参数覆盖，但失败解析时保留原始可审计内容。
 	maps.Copy(reqMap, override)
 	finalJSON, err := json.Marshal(reqMap)
 	if err != nil {
-		return string(reqJSON)
+		return reqJSON
 	}
-	return string(finalJSON)
+	return finalJSON
 }
 
 // filterRequestForLog 去掉 RawRequest 和图片二进制字段，避免 multipart 原始 body 或图片内容落库。

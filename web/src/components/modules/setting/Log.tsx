@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useTranslations } from 'next-intl';
-import { ScrollText, Calendar, Trash2, Database } from 'lucide-react';
+import { ScrollText, Calendar, Trash2, Database, FileWarning } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
@@ -20,12 +20,14 @@ export function SettingLog() {
     const [keepPeriod, setKeepPeriod] = useState('7');
     const [flushSize, setFlushSize] = useState('20');
     const [memoryCacheSize, setMemoryCacheSize] = useState('100');
+    const [maxContentSizeMB, setMaxContentSizeMB] = useState('2');
     const [isClearing, setIsClearing] = useState(false);
 
     const initialEnabled = useRef(true);
     const initialKeepPeriod = useRef('7');
     const initialFlushSize = useRef('20');
     const initialMemoryCacheSize = useRef('100');
+    const initialMaxContentSizeMB = useRef('2');
 
     useEffect(() => {
         if (settings) {
@@ -33,6 +35,7 @@ export function SettingLog() {
             const periodSetting = settings.find(s => s.key === SettingKey.RelayLogKeepPeriod);
             const flushSizeSetting = settings.find(s => s.key === SettingKey.RelayLogFlushSize);
             const memoryCacheSizeSetting = settings.find(s => s.key === SettingKey.RelayLogMemoryCacheSize);
+            const maxContentSizeSetting = settings.find(s => s.key === SettingKey.RelayLogMaxContentSizeMB);
 
             if (enabledSetting) {
                 const isEnabled = enabledSetting.value === 'true';
@@ -50,6 +53,10 @@ export function SettingLog() {
             if (memoryCacheSizeSetting) {
                 queueMicrotask(() => setMemoryCacheSize(memoryCacheSizeSetting.value));
                 initialMemoryCacheSize.current = memoryCacheSizeSetting.value;
+            }
+            if (maxContentSizeSetting) {
+                queueMicrotask(() => setMaxContentSizeMB(maxContentSizeSetting.value));
+                initialMaxContentSizeMB.current = maxContentSizeSetting.value;
             }
         }
     }, [settings]);
@@ -104,6 +111,20 @@ export function SettingLog() {
                 onSuccess: () => {
                     toast.success(t('saved'));
                     initialMemoryCacheSize.current = memoryCacheSize;
+                }
+            }
+        );
+    };
+
+    const handleMaxContentSizeSave = () => {
+        if (maxContentSizeMB === initialMaxContentSizeMB.current) return;
+
+        setSetting.mutate(
+            { key: SettingKey.RelayLogMaxContentSizeMB, value: maxContentSizeMB },
+            {
+                onSuccess: () => {
+                    toast.success(t('saved'));
+                    initialMaxContentSizeMB.current = maxContentSizeMB;
                 }
             }
         );
@@ -193,6 +214,27 @@ export function SettingLog() {
                     onChange={(e) => setMemoryCacheSize(e.target.value)}
                     onBlur={handleMemoryCacheSizeSave}
                     placeholder="100"
+                    className="w-48 rounded-xl"
+                />
+            </div>
+
+            {/* 单条日志正文上限 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-3">
+                        <FileWarning className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('log.maxContentSize.label')}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground ml-8">{t('log.maxContentSize.hint')}</span>
+                </div>
+                <Input
+                    type="number"
+                    min="-1"
+                    step="1"
+                    value={maxContentSizeMB}
+                    onChange={(e) => setMaxContentSizeMB(e.target.value)}
+                    onBlur={handleMaxContentSizeSave}
+                    placeholder="2"
                     className="w-48 rounded-xl"
                 />
             </div>
