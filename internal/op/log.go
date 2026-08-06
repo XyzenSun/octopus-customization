@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"runtime"
 	"sync"
 	"time"
 
@@ -16,6 +17,11 @@ import (
 
 var relayLogCache = make([]model.RelayLog, 0, model.DefaultRelayLogFlushSize)
 var relayLogCacheLock sync.Mutex
+
+// memory_log_dimidiate_times 记录仅内存模式下日志折半发生的次数；
+// 每触发 16 次折半后主动调用一次 runtime.GC，及时回收旧日志正文占用的堆内存。
+// 计数更新复用 relayLogCacheLock，无需额外加锁。
+var memory_log_dimidiate_times int
 
 var relayLogFlushLock sync.Mutex
 
@@ -147,6 +153,7 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 
 	relayLogCacheLock.Lock()
 	relayLogCache = append(relayLogCache, relayLog)
+	needMemoryLogGC := false
 
 	if enabled {
 		// 数据库模式：maxSize = 0 表示实时写入，> 0 表示达到阈值后批量写入
@@ -163,10 +170,22 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 				newCache := make([]model.RelayLog, keepSize, maxSize)
 				copy(newCache, relayLogCache[len(relayLogCache)-keepSize:])
 				relayLogCache = newCache
+
+				memory_log_dimidiate_times++
+				if memory_log_dimidiate_times > 15 {
+					memory_log_dimidiate_times = 0
+					needMemoryLogGC = true
+				}
 			}
 		}
 	}
 	relayLogCacheLock.Unlock()
+
+	// 在第 16 次折半后主动触发一次 GC，及时回收被淘汰旧日志的正文内存。
+	if needMemoryLogGC {
+		runtime.GC()
+	}
+
 	return nil
 }
 
