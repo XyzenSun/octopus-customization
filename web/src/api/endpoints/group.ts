@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
+import type { CustomHeader } from './channel';
 
 /**
  * 分组项信息
@@ -34,6 +35,8 @@ export interface Group {
     match_regex: string;
     first_token_time_out?: number;
     session_keep_time?: number;
+    custom_header?: CustomHeader[] | null;
+    param_override?: string | null;
     items?: GroupItem[];
 }
 
@@ -66,6 +69,8 @@ export interface GroupUpdateRequest {
     match_regex?: string;                 // 仅在匹配正则变更时发送
     first_token_time_out?: number;        // 仅在超时变更时发送
     session_keep_time?: number;           // 仅在会话保持时间变更时发送
+    custom_header?: CustomHeader[];
+    param_override?: string | null;
     items_to_add?: GroupItemAddRequest[];    // 新增的 items
     items_to_update?: GroupItemUpdateRequest[]; // 更新的 items (priority 变更)
     items_to_delete?: number[];              // 删除的 item IDs

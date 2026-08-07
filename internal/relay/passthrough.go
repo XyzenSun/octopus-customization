@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bestruirui/octopus/internal/model"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/streams"
@@ -40,19 +41,33 @@ func (ra *relayAttempt) canPassthrough() bool {
 	if ra.inboundType != ra.channel.Type {
 		return false
 	}
-	if ra.channel.ParamOverride != nil && strings.TrimSpace(*ra.channel.ParamOverride) != "" {
+	if ra.hasRequestOptions() {
 		return false
-	}
-	for _, header := range ra.channel.CustomHeader {
-		if strings.TrimSpace(header.HeaderKey) != "" {
-			return false
-		}
 	}
 	if ra.metrics.RequestModel != ra.internalRequest.Model && !isPassthroughJSONRequest(ra.internalRequest.RawRequest) {
 		return false
 	}
 	_, _, err := passthroughEndpoint(ra.inboundType, ra.channel.GetBaseUrl())
 	return err == nil
+}
+
+func (ra *relayAttempt) hasRequestOptions() bool {
+	hasParamOverride := func(raw *string) bool {
+		return raw != nil && strings.TrimSpace(*raw) != ""
+	}
+	hasCustomHeader := func(headers []model.CustomHeader) bool {
+		for _, header := range headers {
+			if strings.TrimSpace(header.HeaderKey) != "" {
+				return true
+			}
+		}
+		return false
+	}
+
+	if ra.routeMode == routeModeGroup && (hasParamOverride(ra.group.ParamOverride) || hasCustomHeader(ra.group.CustomHeader)) {
+		return true
+	}
+	return hasParamOverride(ra.channel.ParamOverride) || hasCustomHeader(ra.channel.CustomHeader)
 }
 
 func isPassthroughJSONRequest(request *httpclient.Request) bool {

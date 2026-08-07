@@ -76,7 +76,7 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 		},
 		channel: &dbmodel.Channel{
 			Type:     llm.APIFormatOpenAIChatCompletion,
-			BaseUrls: []dbmodel.BaseUrl{{URL: "https://example.com"}},
+			BaseUrls: []dbmodel.BaseUrl{{URL: "https://example.com/v1"}},
 		},
 	}
 
@@ -110,7 +110,46 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 	channelWithHeader.CustomHeader = []dbmodel.CustomHeader{{HeaderKey: "X-Custom", HeaderValue: "value"}}
 	withHeader.channel = &channelWithHeader
 	if withHeader.canPassthrough() {
-		t.Fatal("custom header must use transformed path")
+		t.Fatal("channel custom header must use transformed path")
+	}
+
+	groupOnly := *base
+	groupOnly.relayRun = &relayRun{
+		inboundType:     base.inboundType,
+		internalRequest: base.internalRequest,
+		metrics:         base.metrics,
+		routeMode:       routeModeGroup,
+		group:           dbmodel.Group{},
+	}
+	if !groupOnly.canPassthrough() {
+		t.Fatal("group route without group or channel request options should passthrough")
+	}
+
+	groupOverride := `{"temperature":0}`
+	withGroupOverride := *base
+	withGroupOverride.relayRun = &relayRun{
+		inboundType:     base.inboundType,
+		internalRequest: base.internalRequest,
+		metrics:         base.metrics,
+		routeMode:       routeModeGroup,
+		group:           dbmodel.Group{ParamOverride: &groupOverride},
+	}
+	if withGroupOverride.canPassthrough() {
+		t.Fatal("group param override must use transformed path")
+	}
+
+	withGroupHeader := *base
+	withGroupHeader.relayRun = &relayRun{
+		inboundType:     base.inboundType,
+		internalRequest: base.internalRequest,
+		metrics:         base.metrics,
+		routeMode:       routeModeGroup,
+		group: dbmodel.Group{CustomHeader: []dbmodel.CustomHeader{
+			{HeaderKey: "X-Group", HeaderValue: "value"},
+		}},
+	}
+	if withGroupHeader.canPassthrough() {
+		t.Fatal("group custom header must use transformed path")
 	}
 }
 

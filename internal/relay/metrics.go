@@ -30,7 +30,7 @@ type RelayMetrics struct {
 	ActualModel string
 	Stats       model.StatsMetrics
 
-	// 参数覆盖
+	// 无论指定渠道直连还是分组路由，这里都记录最终实际应用到上游的合并参数覆盖。
 	ParamOverride string
 }
 

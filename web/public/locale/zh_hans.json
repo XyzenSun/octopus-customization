@@ -419,6 +419,18 @@
             "selectChannel": "渠道",
             "selectModel": "模型"
         },
+        "advanced": {
+            "title": "高级选项",
+            "description": "配置分组级请求参数与请求头；同名配置会被渠道级设置覆盖。",
+            "customHeader": "自定义 Header",
+            "headerKey": "Header Key",
+            "headerValue": "Header Value",
+            "addHeader": "添加 Header",
+            "removeHeader": "删除 Header",
+            "paramOverride": "参数覆盖",
+            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数",
+            "saving": "保存中..."
+        },
         "mode": {
             "roundRobin": "轮询",
             "random": "随机",

@@ -419,6 +419,18 @@
             "selectChannel": "Channel",
             "selectModel": "Model"
         },
+        "advanced": {
+            "title": "Advanced Options",
+            "description": "Configure group-level request parameters and headers. Channel-level values override matching entries.",
+            "customHeader": "Custom Headers",
+            "headerKey": "Header Key",
+            "headerValue": "Header Value",
+            "addHeader": "Add Header",
+            "removeHeader": "Remove Header",
+            "paramOverride": "Param Override",
+            "paramOverridePlaceholder": "Optional: JSON string to override request parameters",
+            "saving": "Saving..."
+        },
         "mode": {
             "roundRobin": "Round Robin",
             "random": "Random",
