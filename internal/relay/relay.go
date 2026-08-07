@@ -45,17 +45,20 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 		return nil, err
 	}
 
-	if supportedModels := c.GetString("supported_models"); supportedModels != "" {
-		if !slices.Contains(strings.Split(supportedModels, ","), internalRequest.Model) {
-			err := errors.New("model not supported")
-			resp.Error(c, http.StatusBadRequest, err.Error())
+	group, groupErr := op.GroupGetEnabledMap(internalRequest.Model, c.Request.Context())
+	if groupErr != nil {
+		if !strings.Contains(internalRequest.Model, "/") {
+			resp.Error(c, http.StatusNotFound, "model not found")
+			return nil, groupErr
+		}
+		if err := validateDirectChannelModelAccess(c); err != nil {
 			return nil, err
 		}
+		channelName, modelName, _ := splitDirectChannelModel(internalRequest.Model)
+		return newDirectChannelRelayRun(c, inboundType, inAdapter, internalRequest, channelName, modelName)
 	}
 
-	group, err := op.GroupGetEnabledMap(internalRequest.Model, c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusNotFound, "model not found")
+	if err := validateSupportedModel(c, internalRequest.Model); err != nil {
 		return nil, err
 	}
 
@@ -82,6 +85,26 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 		iter:  iter,
 		group: group,
 	}, nil
+}
+
+func validateSupportedModel(c *gin.Context, requestModel string) error {
+	if supportedModels := c.GetString("supported_models"); supportedModels != "" {
+		if !slices.Contains(strings.Split(supportedModels, ","), requestModel) {
+			err := errors.New("model not supported")
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDirectChannelModelAccess(c *gin.Context) error {
+	if c.GetString("supported_models") == "" {
+		return nil
+	}
+	err := errors.New("model not supported")
+	resp.Error(c, http.StatusBadRequest, err.Error())
+	return err
 }
 
 var errClientDisconnected = errors.New("client disconnected")
@@ -132,7 +155,16 @@ func (r *relayRun) run() {
 	}
 
 	if lastErr == nil {
-		lastErr = errors.New("all channels failed")
+		if r.routeMode == routeModeDirectChannel {
+			lastErr = errors.New("channel unavailable")
+		} else {
+			lastErr = errors.New("all channels failed")
+		}
+	}
+	if r.routeMode == routeModeDirectChannel {
+		r.metrics.Save(ctx, false, lastErr, r.iter.Attempts())
+		resp.Error(r.c, directChannelFailureStatus(r.iter.Attempts()), lastErr.Error())
+		return
 	}
 	r.metrics.Save(ctx, false, lastErr, r.iter.Attempts())
 	resp.Error(r.c, http.StatusBadGateway, lastErr.Error())
@@ -156,13 +188,29 @@ func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
 		r.iter.Skip(channel.ID, 0, channel.Name, "no available key")
 		return nil, nil
 	}
-	if r.iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
+
+	baseURL := channel.GetBaseUrl()
+	var httpClient *http.Client
+	if r.routeMode == routeModeDirectChannel {
+		if !validDirectChannelBaseURL(baseURL) {
+			r.iter.Skip(channel.ID, usedKey.ID, channel.Name, "no valid base URL")
+			return nil, nil
+		}
+		httpClient, err = helper.ChannelHttpClient(channel)
+		if err != nil {
+			r.iter.Skip(channel.ID, usedKey.ID, channel.Name, fmt.Sprintf("http client unavailable: %v", err))
+			return nil, nil
+		}
+	} else if r.iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
 		return nil, nil
 	}
 
-	outAdapter, err := newOutbound(channel.Type, r.internalRequest, channel.GetBaseUrl(), usedKey.ChannelKey)
+	outAdapter, err := newOutbound(channel.Type, r.internalRequest, baseURL, usedKey.ChannelKey)
 	if err != nil {
 		r.iter.Skip(channel.ID, usedKey.ID, channel.Name, err.Error())
+		return nil, nil
+	}
+	if r.routeMode == routeModeDirectChannel && r.iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
 		return nil, nil
 	}
 
@@ -170,15 +218,21 @@ func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
 	r.internalRequest.Model = item.ModelName
 	r.metrics.ActualModel = item.ModelName
 	r.metrics.ParamOverride = ""
-	log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
-		r.metrics.RequestModel, r.group.Mode, channel.Name, item.ModelName,
-		r.iter.Index()+1, r.iter.Len(), r.iter.IsSticky())
+	if r.routeMode == routeModeDirectChannel {
+		log.Infof("direct channel request model %s, forwarding to channel: %s model: %s",
+			r.metrics.RequestModel, channel.Name, item.ModelName)
+	} else {
+		log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
+			r.metrics.RequestModel, r.group.Mode, channel.Name, item.ModelName,
+			r.iter.Index()+1, r.iter.Len(), r.iter.IsSticky())
+	}
 
 	return &relayAttempt{
 		relayRun:   r,
 		outAdapter: outAdapter,
 		channel:    channel,
 		usedKey:    usedKey,
+		httpClient: httpClient,
 	}, nil
 }
 
@@ -203,7 +257,9 @@ func (ra *relayAttempt) run() (bool, error) {
 			RequestSuccess: 1,
 		})
 		balancer.RecordSuccess(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
-		balancer.SetSticky(ra.metrics.APIKeyID, ra.metrics.RequestModel, ra.channel.ID, ra.usedKey.ID)
+		if ra.routeMode == routeModeGroup {
+			balancer.SetSticky(ra.metrics.APIKeyID, ra.metrics.RequestModel, ra.channel.ID, ra.usedKey.ID)
+		}
 		return false, nil
 	}
 	if errors.Is(fwdErr, errClientDisconnected) {
@@ -258,10 +314,14 @@ func (ra *relayAttempt) forward() (int, error) {
 		return 0, fmt.Errorf("missing raw request")
 	}
 
-	httpClient, err := helper.ChannelHttpClient(ra.channel)
-	if err != nil {
-		log.Warnf("failed to get http client: %v", err)
-		return 0, err
+	httpClient := ra.httpClient
+	if httpClient == nil {
+		var err error
+		httpClient, err = helper.ChannelHttpClient(ra.channel)
+		if err != nil {
+			log.Warnf("failed to get http client: %v", err)
+			return 0, err
+		}
 	}
 
 	relayMiddleware := &relayPipelineMiddleware{attempt: ra}
@@ -274,7 +334,7 @@ func (ra *relayAttempt) forward() (int, error) {
 		pipeline.WithMiddlewares(middlewares...),
 		pipeline.WithEmptyResponseDetection(),
 	}
-	if ra.internalRequest.Stream != nil && *ra.internalRequest.Stream && ra.group.FirstTokenTimeOut > 0 {
+	if ra.routeMode == routeModeGroup && ra.internalRequest.Stream != nil && *ra.internalRequest.Stream && ra.group.FirstTokenTimeOut > 0 {
 		pipelineOptions = append(pipelineOptions, pipeline.WithResponseTimeouts(time.Duration(ra.group.FirstTokenTimeOut)*time.Second, 0))
 	}
 
@@ -303,6 +363,9 @@ func (ra *relayAttempt) forward() (int, error) {
 		}
 		if isClientDisconnected(ctx, err) {
 			return relayMiddleware.upstreamStatusCode, errClientDisconnected
+		}
+		if statusCode, written := ra.writeDirectChannelUpstreamError(ctx, inbound, err); written {
+			return statusCode, err
 		}
 		return relayMiddleware.upstreamStatusCode, err
 	}

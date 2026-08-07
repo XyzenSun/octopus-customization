@@ -359,6 +359,16 @@ func ChannelGet(id int, ctx context.Context) (*model.Channel, error) {
 	return &channel, nil
 }
 
+// ChannelGetByName 从当前内存快照中严格按名称查找渠道。
+func ChannelGetByName(name string, ctx context.Context) (*model.Channel, error) {
+	for _, channel := range channelCache.GetAll() {
+		if channel.Name == name {
+			return &channel, nil
+		}
+	}
+	return nil, fmt.Errorf("channel not found")
+}
+
 func channelRefreshCache(ctx context.Context) error {
 	channels := []model.Channel{}
 	if err := db.GetDB().WithContext(ctx).

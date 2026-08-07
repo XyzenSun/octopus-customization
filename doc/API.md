@@ -581,7 +581,7 @@ data: {RelayLog JSON}\n\n
 
 路径前缀：`/v1`，**鉴权：API Key**，请求体需为 JSON（图片编辑/变体除外）。
 
-> 这些路由将请求透明转发至上游 LLM 提供商，响应格式由上游决定。
+> 这些路由使用请求的入站协议返回响应；跨协议渠道由 Transformer 完成请求、响应与上游 HTTP 错误转换。
 
 | 方法 | 路径 | 协议格式 | 说明 |
 |------|------|---------|------|
@@ -602,7 +602,11 @@ data: {RelayLog JSON}\n\n
 ```
 
 - 支持 SSE 流式响应（`stream: true`）
-- 失败时按 Group 的负载均衡策略自动重试/故障转移
+- 完整 `model` 优先精确匹配 Group；命中后按 Group 的负载均衡策略自动重试/故障转移
+- Group 不存在且 `model` 包含 `/` 时，可按第一个 `/` 解析为 `channelName/modelName`，只请求该渠道一次
+- 指定渠道直连不使用负载均衡、重试、故障转移、sticky session 或 Group 首 Token 超时，但仍遵守渠道启用状态、Key 可用性和熔断器
+- 配置了非空 `SupportedModels` 的 API Key 不允许指定渠道直连
+- 直连模型只读取渠道当前 `Model` / `CustomModel` 内存快照，不会暴露到 `/v1/models`
 - 每次尝试结果记录在 `RelayLog.Attempts`（`[]ChannelAttempt`）
 
 ---

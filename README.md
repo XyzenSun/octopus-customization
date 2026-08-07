@@ -270,6 +270,18 @@ Groups aggregate multiple channels into a unified external model name.
 
 > 💡 **Example**: Create a group named `gpt-4o`, add multiple providers' GPT-4o channels to it, then access all channels via a unified `model: gpt-4o`.
 
+**Direct Channel Routing (Advanced):**
+
+When the complete `model` does not match an existing group, use `channelName/upstreamModelName` to make exactly one request to the specified channel, for example `openai/gpt-4o`. The first `/` is the separator, so `openai/vendor/model` sends `vendor/model` upstream.
+
+- Exact group names always take priority, including names containing `/`
+- Channel and model names are case-sensitive
+- The model must exist in the channel's current in-memory `Model` / `CustomModel` snapshot
+- No load balancing, retry, failover, sticky session, or group first-token timeout is applied
+- Channel enabled state, key availability, and circuit breaking still apply
+- API keys with non-empty `SupportedModels` cannot use direct channel routing
+- Direct channel models are not exposed by `/v1/models`
+
 ---
 
 ### 💰 Price Management
