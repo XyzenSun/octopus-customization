@@ -93,6 +93,7 @@
 | `POST` | `/api/v1/channel/enable` | 启用/禁用渠道 |
 | `DELETE` | `/api/v1/channel/delete/:id` | 删除渠道 |
 | `POST` | `/api/v1/channel/fetch-model` | 探测远端可用模型 |
+| `POST` | `/api/v1/channel/test-model` | 真实调用测试单个模型 |
 | `POST` | `/api/v1/channel/sync` | 手动触发模型同步 |
 | `GET` | `/api/v1/channel/last-sync-time` | 最近同步时间 |
 
@@ -169,6 +170,26 @@
 **请求体：** 完整 `Channel` 对象（用于探测远端）。
 
 **响应 `data`：** `[]string`（可用模型名列表）
+
+### POST /api/v1/channel/test-model
+
+对渠道上的单个模型发起一次真实的最小 chat 调用，返回延迟与 HTTP 状态。**不走 relay pipeline**（无重试/熔断/统计），仅做一次性探测，结果不持久化。
+
+**请求体：**
+
+| 字段 | 类型 | binding | 说明 |
+|------|------|---------|------|
+| `channel_id` | `*int` | 二选一 | 已保存渠道 ID；与 `channel` 互斥，必须且只能传一个 |
+| `channel` | `*Channel` | 二选一 | 未保存的临时渠道对象（新建弹窗场景，含完整 keys） |
+| `model` | `string` | `required` | 模型名，必须在该渠道 `model + custom_model` 合并集合内 |
+| `key_index` | `int` | — | `keys` 数组下标，默认 `0`（第一个 Key）；越界返回 400 |
+| `timeout_ms` | `int64` | — | 超时毫秒数，默认 `30000`，上限钳制 `300000` |
+
+> 编码渠道类型（`openai_embedding`）不支持测试，返回 400。测试 prompt 与 `max_tokens` 由后端固定构造，不接受前端覆盖。
+
+**响应 `data`：** `TestModelResult`（字段见 VO.md 第七节）
+
+**错误响应（均 HTTP 400）：** JSON 非法 / `channel_id` 与 `channel` 同时传或都不传 / 渠道不存在时 404 / `key_index` 越界 / 模型不在已选集合 / Key 为空 / 编码渠道类型。
 
 ### POST /api/v1/channel/sync
 

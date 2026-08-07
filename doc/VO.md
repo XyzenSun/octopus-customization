@@ -349,6 +349,31 @@
 
 ---
 
+### TestModelResult（模型测试瞬时结果）
+
+**用途**：渠道编辑弹窗"模型测试"面板对单个模型发起真实调用后的即时反馈。**不持久化**，仅作为本次探测信号由前端在会话内聚合（`Map<model, state>`）。
+**来源接口**：`POST /api/v1/channel/test-model`；源码：`internal/helper/test_model.go`。
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `model` | `string` | 被测模型名 |
+| `status_code` | `int` | 上游 HTTP 状态码；**网络错误/超时（没拿到响应）时为 `0`** |
+| `delay_ms` | `int64` | 请求往返延迟（毫秒） |
+| `error` | `string` | 错误摘要，成功时缺省；非 2xx 时为「`状态码: 上游 error.message`」，截断至 200 字符 |
+
+**状态速查（前端 `TestPanel` 状态点配色依据）：**
+
+| `status_code` | 语义 | 状态点 |
+|---------------|------|--------|
+| `200` | 模型可用 | 绿 |
+| `4xx` | 鉴权/参数/模型不存在等客户端错误 | 红 |
+| `5xx` | 上游服务端错误 | 黄 |
+| `0` | 网络错误 / 超时 / DNS 失败（未收到响应） | 红 |
+
+> 前端对应 TS 类型 `TestModelResult`（`web/src/api/endpoints/channel.ts`），由 `useTestChannelModel()` 调取，不经 React Query 的 `select()` 转换。
+
+---
+
 ## 七、VO 组合关系图
 
 ```
