@@ -21,11 +21,13 @@ export const SettingKey = {
     RelayLogFlushSize: 'relay_log_flush_size',
     RelayLogMemoryCacheSize: 'relay_log_memory_cache_size',
     RelayLogMaxContentSizeMB: 'relay_log_max_content_size_mb',
+    RelayLogMemoryLogMaxDimidiateTimes: 'relay_log_memory_log_max_dimidiate_times',
     CORSAllowOrigins: 'cors_allow_origins',
     CircuitBreakerThreshold: 'circuit_breaker_threshold',
     CircuitBreakerCooldown: 'circuit_breaker_cooldown',
     CircuitBreakerMaxCooldown: 'circuit_breaker_max_cooldown',
     CircuitBreakerEnabled: 'circuit_breaker_enabled',
+    PassthroughEnabled: 'passthrough_enabled',
 } as const;
 
 /**

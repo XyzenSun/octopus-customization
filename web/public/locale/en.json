@@ -168,6 +168,13 @@
             "hint": "Empty = deny all, * = allow all",
             "example": "Only allow specific domains: https://example.com,https://example2.com"
         },
+        "passthrough": {
+            "title": "Same-Protocol Passthrough",
+            "enabled": {
+                "label": "Enable Same-Protocol Passthrough",
+                "hint": "Preserve the original request and response when the inbound and channel protocols match and no request changes are required. When disabled, protocol conversion is always used."
+            }
+        },
         "circuitBreaker": {
             "title": "Circuit Breaker",
             "enabled": {
@@ -359,6 +366,10 @@
                 "label": "Per-Log Content Limit",
                 "hint": "Unit: MiB. Skip the log when its combined request and response content exceeds this size; -1 = unlimited"
             },
+            "maxDimidiateTimes": {
+                "label": "Halve GC Trigger Count",
+                "hint": "After N memory-log halvings, trigger a GC; -1 = disable periodic GC, must be 1 or greater"
+            },
             "memoryEnabled": {
                 "label": "Enable Memory Logging",
                 "hint": "Disable to stop recording any logs, including real-time queries"
@@ -414,6 +425,18 @@
             "clear": "Clear",
             "selectChannel": "Channel",
             "selectModel": "Model"
+        },
+        "advanced": {
+            "title": "Advanced Options",
+            "description": "Configure group-level request parameters and headers. Channel-level values override matching entries.",
+            "customHeader": "Custom Headers",
+            "headerKey": "Header Key",
+            "headerValue": "Header Value",
+            "addHeader": "Add Header",
+            "removeHeader": "Remove Header",
+            "paramOverride": "Param Override",
+            "paramOverridePlaceholder": "Optional: JSON string to override request parameters",
+            "saving": "Saving..."
         },
         "mode": {
             "roundRobin": "Round Robin",

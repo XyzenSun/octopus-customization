@@ -168,6 +168,13 @@
             "hint": "为空禁止跨域，* 允许所有",
             "example": "只允许指定域名: https://example.com,https://example2.com"
         },
+        "passthrough": {
+            "title": "同协议透传",
+            "enabled": {
+                "label": "启用同协议透传",
+                "hint": "入口和渠道协议一致且无需请求修改时，保留原始请求与响应；关闭后统一使用协议转换。"
+            }
+        },
         "circuitBreaker": {
             "title": "熔断器配置",
             "enabled": {
@@ -359,6 +366,10 @@
                 "label": "单条日志正文上限",
                 "hint": "单位 MiB，请求与响应正文合计超过此大小时不记录该日志，-1 表示不限制"
             },
+            "maxDimidiateTimes": {
+                "label": "折半 GC 触发次数",
+                "hint": "仅内存日志模式下，每触发一次折半计数一次，达到此次数后主动 GC 一次；-1 表示关闭周期性 GC，最小必须为 1"
+            },
             "memoryEnabled": {
                 "label": "启用日志记录到内存",
                 "hint": "关闭后将不记录任何日志，包括实时查询"
@@ -414,6 +425,18 @@
             "clear": "清空",
             "selectChannel": "渠道",
             "selectModel": "模型"
+        },
+        "advanced": {
+            "title": "高级选项",
+            "description": "配置分组级请求参数与请求头；同名配置会被渠道级设置覆盖。",
+            "customHeader": "自定义 Header",
+            "headerKey": "Header Key",
+            "headerValue": "Header Value",
+            "addHeader": "添加 Header",
+            "removeHeader": "删除 Header",
+            "paramOverride": "参数覆盖",
+            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数",
+            "saving": "保存中..."
         },
         "mode": {
             "roundRobin": "轮询",

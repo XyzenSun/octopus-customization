@@ -21,6 +21,7 @@ export function SettingLog() {
     const [flushSize, setFlushSize] = useState('20');
     const [memoryCacheSize, setMemoryCacheSize] = useState('100');
     const [maxContentSizeMB, setMaxContentSizeMB] = useState('2');
+    const [maxDimidiateTimes, setMaxDimidiateTimes] = useState('15');
     const [isClearing, setIsClearing] = useState(false);
 
     const initialEnabled = useRef(true);
@@ -28,6 +29,7 @@ export function SettingLog() {
     const initialFlushSize = useRef('20');
     const initialMemoryCacheSize = useRef('100');
     const initialMaxContentSizeMB = useRef('2');
+    const initialMaxDimidiateTimes = useRef('15');
 
     useEffect(() => {
         if (settings) {
@@ -36,6 +38,7 @@ export function SettingLog() {
             const flushSizeSetting = settings.find(s => s.key === SettingKey.RelayLogFlushSize);
             const memoryCacheSizeSetting = settings.find(s => s.key === SettingKey.RelayLogMemoryCacheSize);
             const maxContentSizeSetting = settings.find(s => s.key === SettingKey.RelayLogMaxContentSizeMB);
+            const maxDimidiateTimesSetting = settings.find(s => s.key === SettingKey.RelayLogMemoryLogMaxDimidiateTimes);
 
             if (enabledSetting) {
                 const isEnabled = enabledSetting.value === 'true';
@@ -57,6 +60,10 @@ export function SettingLog() {
             if (maxContentSizeSetting) {
                 queueMicrotask(() => setMaxContentSizeMB(maxContentSizeSetting.value));
                 initialMaxContentSizeMB.current = maxContentSizeSetting.value;
+            }
+            if (maxDimidiateTimesSetting) {
+                queueMicrotask(() => setMaxDimidiateTimes(maxDimidiateTimesSetting.value));
+                initialMaxDimidiateTimes.current = maxDimidiateTimesSetting.value;
             }
         }
     }, [settings]);
@@ -125,6 +132,20 @@ export function SettingLog() {
                 onSuccess: () => {
                     toast.success(t('saved'));
                     initialMaxContentSizeMB.current = maxContentSizeMB;
+                }
+            }
+        );
+    };
+
+    const handleMaxDimidiateTimesSave = () => {
+        if (maxDimidiateTimes === initialMaxDimidiateTimes.current) return;
+
+        setSetting.mutate(
+            { key: SettingKey.RelayLogMemoryLogMaxDimidiateTimes, value: maxDimidiateTimes },
+            {
+                onSuccess: () => {
+                    toast.success(t('saved'));
+                    initialMaxDimidiateTimes.current = maxDimidiateTimes;
                 }
             }
         );
@@ -235,6 +256,27 @@ export function SettingLog() {
                     onChange={(e) => setMaxContentSizeMB(e.target.value)}
                     onBlur={handleMaxContentSizeSave}
                     placeholder="2"
+                    className="w-48 rounded-xl"
+                />
+            </div>
+
+            {/* 折半 GC 触发次数 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-3">
+                        <FileWarning className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('log.maxDimidiateTimes.label')}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground ml-8">{t('log.maxDimidiateTimes.hint')}</span>
+                </div>
+                <Input
+                    type="number"
+                    min="-1"
+                    step="1"
+                    value={maxDimidiateTimes}
+                    onChange={(e) => setMaxDimidiateTimes(e.target.value)}
+                    onBlur={handleMaxDimidiateTimesSave}
+                    placeholder="15"
                     className="w-48 rounded-xl"
                 />
             </div>

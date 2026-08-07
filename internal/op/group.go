@@ -106,6 +106,14 @@ func GroupUpdate(req *model.GroupUpdateRequest, ctx context.Context) (*model.Gro
 		selectFields = append(selectFields, "session_keep_time")
 		updates.SessionKeepTime = *req.SessionKeepTime
 	}
+	if req.CustomHeader != nil {
+		selectFields = append(selectFields, "custom_header")
+		updates.CustomHeader = *req.CustomHeader
+	}
+	if req.ParamOverride != nil {
+		selectFields = append(selectFields, "param_override")
+		updates.ParamOverride = req.ParamOverride
+	}
 
 	if len(selectFields) > 0 {
 		if err := tx.Model(&model.Group{}).Where("id = ?", req.ID).Select(selectFields).Updates(&updates).Error; err != nil {

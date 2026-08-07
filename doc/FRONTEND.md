@@ -146,7 +146,7 @@ LocaleProvider        # next-intl i18n
 | 模块 | 说明 |
 |------|------|
 | `home/` | 首页：总量、活跃度图表、排行 |
-| `channel/` | 渠道（上游 LLM 供应商）：列表、详情、创建、表单 |
+| `channel/` | 渠道（上游 LLM 供应商）：列表、详情、创建、表单、编辑弹窗内"模型测试"窄栏（`TestPanel`，视口 < 640px 隐藏，调用 `POST /api/v1/channel/test-model`，多模型结果在前端会话内聚合、不落库） |
 | `group/` | 渠道分组：模型映射、负载均衡策略编辑 |
 | `apikey-dashboard/` | API Key 仪表板 |
 | `log/` | 中继日志列表 + 实时流（SSE） |

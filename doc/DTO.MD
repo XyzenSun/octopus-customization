@@ -187,6 +187,29 @@
 
 `POST /api/v1/channel/fetch-model`，请求体为完整 `model.Channel`，用于探测远端可用模型。
 
+#### TestModelRequest（测试单个模型）
+
+`POST /api/v1/channel/test-model`，源码：`internal/server/handlers/channel_model_probe.go`。
+
+```json
+{
+  "channel_id": 7,
+  "model": "gpt-4o",
+  "key_index": 0,
+  "timeout_ms": 30000
+}
+```
+
+| 字段 | 类型 | binding | 说明 |
+|------|------|---------|------|
+| `channel_id` | `*int` | 二选一 | 已保存渠道 ID；多渠道缓存读取，无需回传密钥 |
+| `channel` | `*model.Channel` | 二选一 | 未保存临时渠道（含 `keys` 明文），新建弹窗场景 |
+| `model` | `string` | `required` | 模型名，须在渠道已选模型集合内 |
+| `key_index` | `int` | — | `keys` 下标，默认 `0`，`0` 是合法值 |
+| `timeout_ms` | `int64` | — | 超时毫秒，默认 `30000`，服务端钳制上限 `300000` |
+
+> `channel_id` 与 `channel` 必须且只能传一个；编码渠道（`openai_embedding`）不支持测试。
+
 #### 同步渠道模型
 
 `POST /api/v1/channel/sync`，无请求体（手动触发同步任务）。
@@ -201,6 +224,7 @@
 | `/enable` | `null` | — |
 | `/delete/:id` | `null` | — |
 | `/fetch-model` | `[]string` | 远端可用模型名列表 |
+| `/test-model` | `TestModelResult` | 单模型测试结果（见 VO.md 第七节） |
 | `/sync` | `null` | — |
 | `/last-sync-time` | `time.Time` | 最近一次同步时间 |
 

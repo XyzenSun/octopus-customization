@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState, type FormEvent } from 'react';
-import { Check, ChevronDownIcon, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
+import { Check, ChevronDownIcon, HelpCircle, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import * as AccordionPrimitive from '@radix-ui/react-accordion';
 import { useModelChannelList, type LLMChannel } from '@/api/endpoints/model';
@@ -16,7 +16,7 @@ import type { SelectedMember } from './ItemList';
 import { MemberList } from './ItemList';
 import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
-import { HelpCircle } from 'lucide-react';
+import { GroupAdvancedOptionsDialog, type GroupRequestOptions } from './AdvancedOptions';
 
 
 
@@ -26,6 +26,8 @@ export type GroupEditorValues = {
     mode: GroupMode;
     first_token_time_out: number;
     session_keep_time: number;
+    custom_header: GroupRequestOptions['custom_header'];
+    param_override: string;
     members: SelectedMember[];
 };
 
@@ -257,6 +259,10 @@ export function GroupEditor({
     const [mode, setMode] = useState<GroupMode>((initial?.mode ?? 1) as GroupMode);
     const [firstTokenTimeOut, setFirstTokenTimeOut] = useState<number>(initial?.first_token_time_out ?? 0);
     const [sessionKeepTime, setSessionKeepTime] = useState<number>(initial?.session_keep_time ?? 0);
+    const [requestOptions, setRequestOptions] = useState<GroupRequestOptions>({
+        custom_header: initial?.custom_header ?? [],
+        param_override: initial?.param_override ?? '',
+    });
     const [selectedMembers, setSelectedMembers] = useState<SelectedMember[]>(initial?.members ?? []);
     const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
@@ -340,6 +346,8 @@ export function GroupEditor({
             mode,
             first_token_time_out: firstTokenTimeOut,
             session_keep_time: sessionKeepTime,
+            custom_header: requestOptions.custom_header,
+            param_override: requestOptions.param_override,
             members: selectedMembers,
         });
     };
@@ -459,6 +467,14 @@ export function GroupEditor({
                                 {t(`mode.${MODE_LABELS[m]}`)}
                             </button>
                         ))}
+                        <GroupAdvancedOptionsDialog
+                            value={requestOptions}
+                            triggerClassName="flex-1"
+                            onSave={(nextOptions, onDone) => {
+                                setRequestOptions(nextOptions);
+                                onDone();
+                            }}
+                        />
                     </div>
 
                     <div className="flex-1 min-h-0">

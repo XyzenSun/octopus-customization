@@ -45,11 +45,23 @@ func NewIterator(group model.Group, apiKeyID int, requestModel string) *Iterator
 		}
 	}
 
+	return newIterator(candidates, stickyIdx, requestModel)
+}
+
+// NewSingleIterator 创建不排序、不粘性的单候选迭代器。
+func NewSingleIterator(channelID int, modelName string) *Iterator {
+	return newIterator([]model.GroupItem{{
+		ChannelID: channelID,
+		ModelName: modelName,
+	}}, -1, modelName)
+}
+
+func newIterator(candidates []model.GroupItem, stickyIdx int, modelName string) *Iterator {
 	return &Iterator{
 		candidates: candidates,
 		index:      -1,
 		stickyIdx:  stickyIdx,
-		modelName:  requestModel,
+		modelName:  modelName,
 	}
 }
 

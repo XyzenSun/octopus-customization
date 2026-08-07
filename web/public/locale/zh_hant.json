@@ -168,6 +168,13 @@
             "hint": "為空禁止跨網域，* 允許所有",
             "example": "只允許指定域名: https://example.com,https://example2.com"
         },
+        "passthrough": {
+            "title": "同協定透傳",
+            "enabled": {
+                "label": "啟用同協定透傳",
+                "hint": "入口和供應源協定一致且無需修改請求時，保留原始請求與回應；關閉後統一使用協定轉換。"
+            }
+        },
         "circuitBreaker": {
             "title": "熔斷器配置",
             "enabled": {
@@ -359,6 +366,10 @@
                 "label": "單條日誌正文上限",
                 "hint": "單位 MiB，請求與回應正文合計超過此大小時不記錄該日誌，-1 表示不限制"
             },
+            "maxDimidiateTimes": {
+                "label": "折半 GC 觸發次數",
+                "hint": "僅記憶體日誌模式下，每觸發一次折半計數一次，達到此數後主動 GC 一次；-1 表示關閉周期性 GC，最小必須為 1"
+            },
             "memoryEnabled": {
                 "label": "啟用日誌記錄到記憶體",
                 "hint": "關閉後將不記錄任何日誌，包括即時查詢"
@@ -414,6 +425,18 @@
             "clear": "清空",
             "selectChannel": "供應源",
             "selectModel": "模型"
+        },
+        "advanced": {
+            "title": "進階選項",
+            "description": "設定分組層級的請求參數與請求頭；同名設定會被供應源層級覆蓋。",
+            "customHeader": "自定義 Header",
+            "headerKey": "Header Key",
+            "headerValue": "Header Value",
+            "addHeader": "新增 Header",
+            "removeHeader": "刪除 Header",
+            "paramOverride": "參數覆蓋",
+            "paramOverridePlaceholder": "可選：JSON 字串，用於覆蓋請求參數",
+            "saving": "儲存中..."
         },
         "mode": {
             "roundRobin": "輪詢",

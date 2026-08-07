@@ -169,6 +169,10 @@ function MorphingDialogContent({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        const openDialogs = document.querySelectorAll('[data-slot="morphing-dialog-content"]');
+        if (openDialogs[openDialogs.length - 1] !== containerRef.current) {
+          return;
+        }
         setIsOpen(false);
       }
       if (event.key === 'Tab') {
@@ -243,6 +247,7 @@ function MorphingDialogContent({
     <motion.div
       ref={containerRef}
       layoutId={`dialog-${uniqueId}`}
+      data-slot='morphing-dialog-content'
       className={cn('overflow-hidden', className)}
       style={style}
       role='dialog'

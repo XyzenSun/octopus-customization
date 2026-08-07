@@ -19,9 +19,11 @@ var relayLogCache = make([]model.RelayLog, 0, model.DefaultRelayLogFlushSize)
 var relayLogCacheLock sync.Mutex
 
 // memory_log_dimidiate_times 记录仅内存模式下日志折半发生的次数；
-// 每触发 16 次折半后主动调用一次 runtime.GC，及时回收旧日志正文占用的堆内存。
-// 计数更新复用 relayLogCacheLock，无需额外加锁。
+// 达到 relay_log_memory_log_max_dimidiate_times 次折半后主动调用一次 runtime.GC，
+// 及时回收旧日志正文占用的堆内存。计数更新复用 relayLogCacheLock，无需额外加锁。
+// memory_log_max_dimidiate_times 为 -1 时关闭周期性 GC。
 var memory_log_dimidiate_times int
+var memory_log_max_dimidiate_times = model.DefaultRelayLogMemoryLogMaxDimidiateTimes
 
 var relayLogFlushLock sync.Mutex
 
@@ -151,6 +153,14 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 	relayLog.ID = snowflake.GenerateID()
 	go notifySubscribers(relayLog)
 
+	// GC 触发阈值：只在仅内存模式下读取
+	maxDimidiateTimes := memory_log_max_dimidiate_times
+	if !enabled {
+		if v, err := SettingGetInt(model.SettingKeyRelayLogMemoryLogMaxDimidiateTimes); err == nil {
+			maxDimidiateTimes = v
+		}
+	}
+
 	relayLogCacheLock.Lock()
 	relayLogCache = append(relayLogCache, relayLog)
 	needMemoryLogGC := false
@@ -163,7 +173,7 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 		}
 	} else {
 		// 仅内存模式：达到上限后保留最新的一半
-		if len(relayLogCache) >= maxSize {
+		if len(relayLogCache) >= maxSize && maxDimidiateTimes != -1 {
 			// 重建底层数组而不是 reslice，避免数组持续引用旧日志的 Request/ResponseContent 导致内存无法回收
 			keepSize := maxSize / 2
 			if len(relayLogCache) > keepSize {
@@ -172,7 +182,7 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 				relayLogCache = newCache
 
 				memory_log_dimidiate_times++
-				if memory_log_dimidiate_times > 15 {
+				if memory_log_dimidiate_times > maxDimidiateTimes {
 					memory_log_dimidiate_times = 0
 					needMemoryLogGC = true
 				}
@@ -181,7 +191,8 @@ func RelayLogAdd(ctx context.Context, relayLog model.RelayLog) error {
 	}
 	relayLogCacheLock.Unlock()
 
-	// 在第 16 次折半后主动触发一次 GC，及时回收被淘汰旧日志的正文内存。
+	// 达到 relay_log_memory_log_max_dimidiate_times 次折半后主动触发一次 GC，
+	// 及时回收被淘汰旧日志的正文内存。-1 表示关闭周期性 GC。
 	if needMemoryLogGC {
 		runtime.GC()
 	}
@@ -212,6 +223,7 @@ func RelayLogSaveDBTask(ctx context.Context) error {
 	}
 
 	// 如果未启用日志保存，检查缓存大小，如果超过限制则清理旧日志
+	maxDimidiateTimes, _ := SettingGetInt(model.SettingKeyRelayLogMemoryLogMaxDimidiateTimes)
 	relayLogCacheLock.Lock()
 	maxSizeNoDB, err := SettingGetInt(model.SettingKeyRelayLogMemoryCacheSize)
 	if err != nil || maxSizeNoDB < 0 {
@@ -220,7 +232,7 @@ func RelayLogSaveDBTask(ctx context.Context) error {
 	// maxSizeNoDB = 0 表示不记录日志，清空缓存
 	if maxSizeNoDB == 0 {
 		relayLogCache = make([]model.RelayLog, 0, model.DefaultRelayLogFlushSize)
-	} else if len(relayLogCache) > maxSizeNoDB {
+	} else if len(relayLogCache) > maxSizeNoDB && maxDimidiateTimes != -1 {
 		keepSize := maxSizeNoDB / 2
 		newCache := make([]model.RelayLog, keepSize, maxSizeNoDB)
 		copy(newCache, relayLogCache[len(relayLogCache)-keepSize:])

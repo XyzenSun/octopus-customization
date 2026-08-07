@@ -13,6 +13,10 @@ function useClickOutside<T extends HTMLElement>(
       if (!ref || !ref.current || ref.current.contains(event.target as Node)) {
         return;
       }
+      const openDialogs = document.querySelectorAll('[data-slot="morphing-dialog-content"]');
+      if (openDialogs.length > 0 && openDialogs[openDialogs.length - 1] !== ref.current) {
+        return;
+      }
 
       handler(event);
     };

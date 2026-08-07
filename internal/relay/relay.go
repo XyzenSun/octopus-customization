@@ -17,6 +17,7 @@ import (
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/utils/log"
+	"github.com/gin-contrib/sse"
 	"github.com/gin-gonic/gin"
 	"github.com/looplj/axonhub/llm"
 	"github.com/looplj/axonhub/llm/httpclient"
@@ -43,18 +44,22 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 	if err != nil {
 		return nil, err
 	}
+	passthroughEnabled := passthroughEnabledSnapshot()
 
-	if supportedModels := c.GetString("supported_models"); supportedModels != "" {
-		if !slices.Contains(strings.Split(supportedModels, ","), internalRequest.Model) {
-			err := errors.New("model not supported")
-			resp.Error(c, http.StatusBadRequest, err.Error())
+	group, groupErr := op.GroupGetEnabledMap(internalRequest.Model, c.Request.Context())
+	if groupErr != nil {
+		if !strings.Contains(internalRequest.Model, "/") {
+			resp.Error(c, http.StatusNotFound, "model not found")
+			return nil, groupErr
+		}
+		if err := validateDirectChannelModelAccess(c); err != nil {
 			return nil, err
 		}
+		channelName, modelName, _ := splitDirectChannelModel(internalRequest.Model)
+		return newDirectChannelRelayRun(c, inboundType, inAdapter, internalRequest, channelName, modelName, passthroughEnabled)
 	}
 
-	group, err := op.GroupGetEnabledMap(internalRequest.Model, c.Request.Context())
-	if err != nil {
-		resp.Error(c, http.StatusNotFound, "model not found")
+	if err := validateSupportedModel(c, internalRequest.Model); err != nil {
 		return nil, err
 	}
 
@@ -68,6 +73,7 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 
 	return &relayRun{
 		c:               c,
+		inboundType:     inboundType,
 		inAdapter:       inAdapter,
 		internalRequest: internalRequest,
 		metrics: &RelayMetrics{
@@ -77,9 +83,35 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 			StartTime:       time.Now(),
 			InternalRequest: internalRequest,
 		},
-		iter:  iter,
-		group: group,
+		iter:               iter,
+		group:              group,
+		passthroughEnabled: passthroughEnabled,
 	}, nil
+}
+
+func passthroughEnabledSnapshot() bool {
+	enabled, err := op.SettingGetBool(dbmodel.SettingKeyPassthroughEnabled)
+	return err == nil && enabled
+}
+
+func validateSupportedModel(c *gin.Context, requestModel string) error {
+	if supportedModels := c.GetString("supported_models"); supportedModels != "" {
+		if !slices.Contains(strings.Split(supportedModels, ","), requestModel) {
+			err := errors.New("model not supported")
+			resp.Error(c, http.StatusBadRequest, err.Error())
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDirectChannelModelAccess(c *gin.Context) error {
+	if c.GetString("supported_models") == "" {
+		return nil
+	}
+	err := errors.New("model not supported")
+	resp.Error(c, http.StatusBadRequest, err.Error())
+	return err
 }
 
 var errClientDisconnected = errors.New("client disconnected")
@@ -130,7 +162,16 @@ func (r *relayRun) run() {
 	}
 
 	if lastErr == nil {
-		lastErr = errors.New("all channels failed")
+		if r.routeMode == routeModeDirectChannel {
+			lastErr = errors.New("channel unavailable")
+		} else {
+			lastErr = errors.New("all channels failed")
+		}
+	}
+	if r.routeMode == routeModeDirectChannel {
+		r.metrics.Save(ctx, false, lastErr, r.iter.Attempts())
+		resp.Error(r.c, directChannelFailureStatus(r.iter.Attempts()), lastErr.Error())
+		return
 	}
 	r.metrics.Save(ctx, false, lastErr, r.iter.Attempts())
 	resp.Error(r.c, http.StatusBadGateway, lastErr.Error())
@@ -154,13 +195,29 @@ func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
 		r.iter.Skip(channel.ID, 0, channel.Name, "no available key")
 		return nil, nil
 	}
-	if r.iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
+
+	baseURL := channel.GetBaseUrl()
+	var httpClient *http.Client
+	if r.routeMode == routeModeDirectChannel {
+		if !validDirectChannelBaseURL(baseURL) {
+			r.iter.Skip(channel.ID, usedKey.ID, channel.Name, "no valid base URL")
+			return nil, nil
+		}
+		httpClient, err = helper.ChannelHttpClient(channel)
+		if err != nil {
+			r.iter.Skip(channel.ID, usedKey.ID, channel.Name, fmt.Sprintf("http client unavailable: %v", err))
+			return nil, nil
+		}
+	} else if r.iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
 		return nil, nil
 	}
 
-	outAdapter, err := newOutbound(channel.Type, r.internalRequest, channel.GetBaseUrl(), usedKey.ChannelKey)
+	outAdapter, err := newOutbound(channel.Type, r.internalRequest, baseURL, usedKey.ChannelKey)
 	if err != nil {
 		r.iter.Skip(channel.ID, usedKey.ID, channel.Name, err.Error())
+		return nil, nil
+	}
+	if r.routeMode == routeModeDirectChannel && r.iter.SkipCircuitBreak(channel.ID, usedKey.ID, channel.Name) {
 		return nil, nil
 	}
 
@@ -168,15 +225,21 @@ func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
 	r.internalRequest.Model = item.ModelName
 	r.metrics.ActualModel = item.ModelName
 	r.metrics.ParamOverride = ""
-	log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
-		r.metrics.RequestModel, r.group.Mode, channel.Name, item.ModelName,
-		r.iter.Index()+1, r.iter.Len(), r.iter.IsSticky())
+	if r.routeMode == routeModeDirectChannel {
+		log.Infof("direct channel request model %s, forwarding to channel: %s model: %s",
+			r.metrics.RequestModel, channel.Name, item.ModelName)
+	} else {
+		log.Infof("request model %s, mode: %d, forwarding to channel: %s model: %s (attempt %d/%d, sticky=%t)",
+			r.metrics.RequestModel, r.group.Mode, channel.Name, item.ModelName,
+			r.iter.Index()+1, r.iter.Len(), r.iter.IsSticky())
+	}
 
 	return &relayAttempt{
 		relayRun:   r,
 		outAdapter: outAdapter,
 		channel:    channel,
 		usedKey:    usedKey,
+		httpClient: httpClient,
 	}, nil
 }
 
@@ -201,7 +264,9 @@ func (ra *relayAttempt) run() (bool, error) {
 			RequestSuccess: 1,
 		})
 		balancer.RecordSuccess(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
-		balancer.SetSticky(ra.metrics.APIKeyID, ra.metrics.RequestModel, ra.channel.ID, ra.usedKey.ID)
+		if ra.routeMode == routeModeGroup {
+			balancer.SetSticky(ra.metrics.APIKeyID, ra.metrics.RequestModel, ra.channel.ID, ra.usedKey.ID)
+		}
 		return false, nil
 	}
 	if errors.Is(fwdErr, errClientDisconnected) {
@@ -256,25 +321,45 @@ func (ra *relayAttempt) forward() (int, error) {
 		return 0, fmt.Errorf("missing raw request")
 	}
 
-	httpClient, err := helper.ChannelHttpClient(ra.channel)
-	if err != nil {
-		log.Warnf("failed to get http client: %v", err)
-		return 0, err
+	httpClient := ra.httpClient
+	if httpClient == nil {
+		var err error
+		httpClient, err = helper.ChannelHttpClient(ra.channel)
+		if err != nil {
+			log.Warnf("failed to get http client: %v", err)
+			return 0, err
+		}
 	}
 
 	relayMiddleware := &relayPipelineMiddleware{attempt: ra}
+	passthroughEnabled := ra.canPassthrough()
+	middlewares := []pipeline.Middleware{relayMiddleware}
+	if !passthroughEnabled {
+		middlewares = append([]pipeline.Middleware{stream.EnsureUsage()}, middlewares...)
+	}
 	pipelineOptions := []pipeline.Option{
-		pipeline.WithMiddlewares(stream.EnsureUsage(), relayMiddleware),
+		pipeline.WithMiddlewares(middlewares...),
 		pipeline.WithEmptyResponseDetection(),
 	}
-	if ra.internalRequest.Stream != nil && *ra.internalRequest.Stream && ra.group.FirstTokenTimeOut > 0 {
+	if ra.routeMode == routeModeGroup && ra.internalRequest.Stream != nil && *ra.internalRequest.Stream && ra.group.FirstTokenTimeOut > 0 {
 		pipelineOptions = append(pipelineOptions, pipeline.WithResponseTimeouts(time.Duration(ra.group.FirstTokenTimeOut)*time.Second, 0))
+	}
+
+	inbound := transformer.Inbound(&parsedRequestInbound{Inbound: ra.inAdapter, request: ra.internalRequest})
+	outbound := ra.outAdapter
+	if passthroughEnabled {
+		passthrough, err := newPassthroughTransformer(ra)
+		if err != nil {
+			return 0, err
+		}
+		inbound = &passthroughInbound{transformer: passthrough, request: ra.internalRequest}
+		outbound = passthrough
 	}
 
 	result, err := pipeline.NewFactory(httpclient.NewHttpClientWithClient(httpClient)).
 		Pipeline(
-			&parsedRequestInbound{Inbound: ra.inAdapter, request: ra.internalRequest},
-			ra.outAdapter,
+			inbound,
+			outbound,
 			pipelineOptions...,
 		).
 		Process(ctx, ra.internalRequest.RawRequest)
@@ -285,6 +370,9 @@ func (ra *relayAttempt) forward() (int, error) {
 		}
 		if isClientDisconnected(ctx, err) {
 			return relayMiddleware.upstreamStatusCode, errClientDisconnected
+		}
+		if statusCode, written := ra.writeDirectChannelUpstreamError(ctx, inbound, err); written {
+			return statusCode, err
 		}
 		return relayMiddleware.upstreamStatusCode, err
 	}
@@ -308,9 +396,7 @@ func (ra *relayAttempt) forward() (int, error) {
 	contentType := "application/json"
 	if result.Response.Headers != nil {
 		for key, values := range result.Response.Headers {
-			for _, value := range values {
-				ra.c.Header(key, value)
-			}
+			ra.c.Writer.Header()[key] = append([]string(nil), values...)
 		}
 		if result.Response.Headers.Get("Content-Type") != "" {
 			contentType = result.Response.Headers.Get("Content-Type")
@@ -320,16 +406,14 @@ func (ra *relayAttempt) forward() (int, error) {
 	return statusCode, nil
 }
 
-func (ra *relayAttempt) applyChannelRequestOptions(outboundRequest *httpclient.Request) {
-	// ParamOverride 只覆盖 JSON 请求体；multipart 图片编辑等请求不能按 map 合并。
-	if ra.channel.ParamOverride != nil && *ra.channel.ParamOverride != "" && strings.Contains(strings.ToLower(outboundRequest.Headers.Get("Content-Type")+" "+outboundRequest.ContentType), "application/json") {
-		var bodyMap map[string]any
-		if err := json.Unmarshal(outboundRequest.Body, &bodyMap); err != nil {
-			log.Warnf("failed to unmarshal request body: %v, skipping param_override", err)
-		} else {
-			var override map[string]any
-			if err := json.Unmarshal([]byte(*ra.channel.ParamOverride), &override); err != nil {
-				log.Warnf("failed to unmarshal param_override: %v, skipping", err)
+func (ra *relayAttempt) applyRequestOptions(outboundRequest *httpclient.Request) {
+	// 参数覆盖只作用于 JSON 请求体；分组配置先合并，渠道配置再覆盖同名顶层参数。
+	if strings.Contains(strings.ToLower(outboundRequest.Headers.Get("Content-Type")+" "+outboundRequest.ContentType), "application/json") {
+		override, serializedOverride, ok := ra.mergedParamOverride()
+		if ok {
+			var bodyMap map[string]any
+			if err := json.Unmarshal(outboundRequest.Body, &bodyMap); err != nil {
+				log.Warnf("failed to unmarshal request body: %v, skipping param_override", err)
 			} else {
 				maps.Copy(bodyMap, override)
 				modifiedBody, err := json.Marshal(bodyMap)
@@ -337,18 +421,78 @@ func (ra *relayAttempt) applyChannelRequestOptions(outboundRequest *httpclient.R
 					log.Warnf("failed to marshal modified body: %v, skipping param_override", err)
 				} else {
 					outboundRequest.Body = modifiedBody
-					ra.metrics.ParamOverride = *ra.channel.ParamOverride
+					ra.metrics.ParamOverride = serializedOverride
 				}
 			}
 		}
 	}
-	for _, header := range ra.channel.CustomHeader {
+
+	for _, header := range ra.mergedCustomHeaders() {
 		// pipeline 在 raw request middleware 前已经写入 Auth；同名敏感头保持认证配置优先，延续旧 BuildHttpRequest 的覆盖顺序。
 		if outboundRequest.Headers.Get(header.HeaderKey) != "" && httpclient.IsSensitiveHeader(header.HeaderKey) {
 			continue
 		}
 		outboundRequest.Headers.Set(header.HeaderKey, header.HeaderValue)
 	}
+}
+
+func (ra *relayAttempt) mergedParamOverride() (map[string]any, string, bool) {
+	merged := make(map[string]any)
+	configured := false
+	merge := func(scope string, raw *string) {
+		if raw == nil || strings.TrimSpace(*raw) == "" {
+			return
+		}
+		var override map[string]any
+		if err := json.Unmarshal([]byte(*raw), &override); err != nil {
+			log.Warnf("failed to unmarshal %s param_override: %v, skipping", scope, err)
+			return
+		}
+		maps.Copy(merged, override)
+		configured = true
+	}
+
+	if ra.routeMode == routeModeGroup {
+		merge("group", ra.group.ParamOverride)
+	}
+	merge("channel", ra.channel.ParamOverride)
+	if !configured {
+		return nil, "", false
+	}
+
+	serialized, err := json.Marshal(merged)
+	if err != nil {
+		log.Warnf("failed to marshal merged param_override: %v, skipping", err)
+		return nil, "", false
+	}
+	return merged, string(serialized), true
+}
+
+func (ra *relayAttempt) mergedCustomHeaders() []dbmodel.CustomHeader {
+	headers := make([]dbmodel.CustomHeader, 0, len(ra.group.CustomHeader)+len(ra.channel.CustomHeader))
+	indexByKey := make(map[string]int, cap(headers))
+	merge := func(source []dbmodel.CustomHeader) {
+		for _, header := range source {
+			key := strings.TrimSpace(header.HeaderKey)
+			if key == "" {
+				continue
+			}
+			header.HeaderKey = key
+			normalizedKey := strings.ToLower(key)
+			if index, ok := indexByKey[normalizedKey]; ok {
+				headers[index] = header
+				continue
+			}
+			indexByKey[normalizedKey] = len(headers)
+			headers = append(headers, header)
+		}
+	}
+
+	if ra.routeMode == routeModeGroup {
+		merge(ra.group.CustomHeader)
+	}
+	merge(ra.channel.CustomHeader)
+	return headers
 }
 
 // writeStream 把 pipeline 输出的客户端格式流写回请求方。
@@ -443,14 +587,14 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 				firstToken = false
 			}
 
-			ra.c.SSEvent(r.event.Type, r.event.Data)
+			ra.c.Render(-1, sse.Event{Event: r.event.Type, Id: r.event.LastEventID, Data: r.event.Data})
 			ra.c.Writer.Flush()
 		}
 	}
 }
 
-// relayPipelineMiddleware 承接 octopus 自己的通道级副作用：
-// 1. 在 pipeline 发出上游请求前应用渠道参数覆盖和自定义 header；
+// relayPipelineMiddleware 承接 octopus 自己的请求级副作用：
+// 1. 在 pipeline 发出上游请求前应用分组与渠道的参数覆盖和自定义 header；
 // 2. 在上游失败时保存 HTTP 状态码，供 key 冷却、熔断和后续选路使用；
 // 3. 在非流式响应转成 llm.Response 后记录 usage。
 // axonhub/llm 只提供了部分函数式 middleware 构造器，错误状态码和 llm 响应 usage 这两个回调没有公开构造器，
@@ -469,7 +613,7 @@ func (m *relayPipelineMiddleware) OnOutboundRawRequest(ctx context.Context, requ
 	if request.Headers == nil {
 		request.Headers = make(http.Header)
 	}
-	m.attempt.applyChannelRequestOptions(request)
+	m.attempt.applyRequestOptions(request)
 	return request, nil
 }
 
