@@ -234,7 +234,7 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
     };
 
     return (
-        <aside className="w-64 shrink-0 border-l border-border bg-card/50 px-4 py-4 flex flex-col gap-3 overflow-y-auto">
+        <aside className="w-64 shrink-0 border-l border-border bg-card/50 px-4 py-4 hidden sm:flex flex-col gap-3 overflow-y-auto">
             {/* 标题 + 超时输入 */}
             <header className="flex items-end justify-between gap-2 pb-2 border-b border-border">
                 <h3 className="text-sm font-semibold text-card-foreground">{t('title')}</h3>
