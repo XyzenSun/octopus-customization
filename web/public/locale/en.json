@@ -168,6 +168,13 @@
             "hint": "Empty = deny all, * = allow all",
             "example": "Only allow specific domains: https://example.com,https://example2.com"
         },
+        "passthrough": {
+            "title": "Same-Protocol Passthrough",
+            "enabled": {
+                "label": "Enable Same-Protocol Passthrough",
+                "hint": "Preserve the original request and response when the inbound and channel protocols match and no request changes are required. When disabled, protocol conversion is always used."
+            }
+        },
         "circuitBreaker": {
             "title": "Circuit Breaker",
             "enabled": {

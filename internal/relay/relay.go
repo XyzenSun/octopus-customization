@@ -44,6 +44,7 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 	if err != nil {
 		return nil, err
 	}
+	passthroughEnabled := passthroughEnabledSnapshot()
 
 	group, groupErr := op.GroupGetEnabledMap(internalRequest.Model, c.Request.Context())
 	if groupErr != nil {
@@ -55,7 +56,7 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 			return nil, err
 		}
 		channelName, modelName, _ := splitDirectChannelModel(internalRequest.Model)
-		return newDirectChannelRelayRun(c, inboundType, inAdapter, internalRequest, channelName, modelName)
+		return newDirectChannelRelayRun(c, inboundType, inAdapter, internalRequest, channelName, modelName, passthroughEnabled)
 	}
 
 	if err := validateSupportedModel(c, internalRequest.Model); err != nil {
@@ -82,9 +83,15 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 			StartTime:       time.Now(),
 			InternalRequest: internalRequest,
 		},
-		iter:  iter,
-		group: group,
+		iter:               iter,
+		group:              group,
+		passthroughEnabled: passthroughEnabled,
 	}, nil
+}
+
+func passthroughEnabledSnapshot() bool {
+	enabled, err := op.SettingGetBool(dbmodel.SettingKeyPassthroughEnabled)
+	return err == nil && enabled
 }
 
 func validateSupportedModel(c *gin.Context, requestModel string) error {

@@ -414,7 +414,7 @@ func TestNewDirectChannelRelayRunValidation(t *testing.T) {
 			c, _ := gin.CreateTestContext(recorder)
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 			requestModel := tt.channelName + "/" + tt.modelName
-			_, err := newDirectChannelRelayRun(c, llm.APIFormatOpenAIChatCompletion, routeTestInbound{}, &llm.Request{Model: requestModel}, tt.channelName, tt.modelName)
+			_, err := newDirectChannelRelayRun(c, llm.APIFormatOpenAIChatCompletion, routeTestInbound{}, &llm.Request{Model: requestModel}, tt.channelName, tt.modelName, false)
 			if err == nil {
 				t.Fatal("newDirectChannelRelayRun() error = nil")
 			}
@@ -478,7 +478,7 @@ func TestPrepareDirectChannelAttemptUnavailable(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-			run, err := newDirectChannelRelayRun(c, llm.APIFormatOpenAIChatCompletion, routeTestInbound{}, &llm.Request{Model: channel.Name + "/model", RequestType: llm.RequestTypeChat}, channel.Name, "model")
+			run, err := newDirectChannelRelayRun(c, llm.APIFormatOpenAIChatCompletion, routeTestInbound{}, &llm.Request{Model: channel.Name + "/model", RequestType: llm.RequestTypeChat}, channel.Name, "model", false)
 			if err != nil {
 				t.Fatalf("newDirectChannelRelayRun() error = %v", err)
 			}
@@ -526,7 +526,7 @@ func TestPrepareDirectChannelAttemptCircuitBreak(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	run, err := newDirectChannelRelayRun(c, llm.APIFormatOpenAIChatCompletion, routeTestInbound{}, &llm.Request{Model: "circuit/model", RequestType: llm.RequestTypeChat}, "circuit", "model")
+	run, err := newDirectChannelRelayRun(c, llm.APIFormatOpenAIChatCompletion, routeTestInbound{}, &llm.Request{Model: "circuit/model", RequestType: llm.RequestTypeChat}, "circuit", "model", false)
 	if err != nil {
 		t.Fatalf("newDirectChannelRelayRun() error = %v", err)
 	}

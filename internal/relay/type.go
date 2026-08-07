@@ -19,14 +19,15 @@ const (
 
 // relayRun 保存一次客户端请求在负载均衡循环中共享的状态。
 type relayRun struct {
-	c               *gin.Context
-	inboundType     llm.APIFormat
-	inAdapter       transformer.Inbound
-	internalRequest *llm.Request
-	metrics         *RelayMetrics
-	iter            *balancer.Iterator
-	group           dbmodel.Group
-	routeMode       routeMode
+	c                  *gin.Context
+	inboundType        llm.APIFormat
+	inAdapter          transformer.Inbound
+	internalRequest    *llm.Request
+	metrics            *RelayMetrics
+	iter               *balancer.Iterator
+	group              dbmodel.Group
+	routeMode          routeMode
+	passthroughEnabled bool
 }
 
 // relayAttempt 保存一次上游通道尝试的状态。

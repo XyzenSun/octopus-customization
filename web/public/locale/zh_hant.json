@@ -168,6 +168,13 @@
             "hint": "為空禁止跨網域，* 允許所有",
             "example": "只允許指定域名: https://example.com,https://example2.com"
         },
+        "passthrough": {
+            "title": "同協定透傳",
+            "enabled": {
+                "label": "啟用同協定透傳",
+                "hint": "入口和供應源協定一致且無需修改請求時，保留原始請求與回應；關閉後統一使用協定轉換。"
+            }
+        },
         "circuitBreaker": {
             "title": "熔斷器配置",
             "enabled": {

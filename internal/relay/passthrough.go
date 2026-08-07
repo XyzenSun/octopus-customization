@@ -35,7 +35,10 @@ type passthroughTransformer struct {
 }
 
 func (ra *relayAttempt) canPassthrough() bool {
-	if ra == nil || ra.channel == nil || ra.internalRequest == nil || ra.internalRequest.RawRequest == nil {
+	if ra == nil || ra.relayRun == nil || !ra.passthroughEnabled {
+		return false
+	}
+	if ra.channel == nil || ra.internalRequest == nil || ra.internalRequest.RawRequest == nil || ra.metrics == nil {
 		return false
 	}
 	if ra.inboundType != ra.channel.Type {

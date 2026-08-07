@@ -67,7 +67,8 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 	requestBody := []byte(`{"model":"model-a","messages":[{"role":"user","content":"hello"}]}`)
 	base := &relayAttempt{
 		relayRun: &relayRun{
-			inboundType: llm.APIFormatOpenAIChatCompletion,
+			inboundType:        llm.APIFormatOpenAIChatCompletion,
+			passthroughEnabled: true,
 			internalRequest: &llm.Request{Model: "model-a", RawRequest: &httpclient.Request{
 				Headers: http.Header{"Content-Type": []string{"application/json"}},
 				Body:    requestBody,
@@ -84,13 +85,22 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 		t.Fatal("matching protocol without body modification should passthrough")
 	}
 
+	disabled := *base
+	disabledRun := *base.relayRun
+	disabledRun.passthroughEnabled = false
+	disabled.relayRun = &disabledRun
+	if disabled.canPassthrough() {
+		t.Fatal("disabled global setting must use transformed path")
+	}
+
 	mapped := *base
 	mappedRequest := *base.internalRequest
 	mappedRequest.Model = "model-b"
 	mapped.relayRun = &relayRun{
-		inboundType:     base.inboundType,
-		internalRequest: &mappedRequest,
-		metrics:         base.metrics,
+		inboundType:        base.inboundType,
+		internalRequest:    &mappedRequest,
+		metrics:            base.metrics,
+		passthroughEnabled: true,
 	}
 	if !mapped.canPassthrough() {
 		t.Fatal("same-protocol model mapping should rewrite only model and passthrough")
@@ -115,11 +125,12 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 
 	groupOnly := *base
 	groupOnly.relayRun = &relayRun{
-		inboundType:     base.inboundType,
-		internalRequest: base.internalRequest,
-		metrics:         base.metrics,
-		routeMode:       routeModeGroup,
-		group:           dbmodel.Group{},
+		inboundType:        base.inboundType,
+		internalRequest:    base.internalRequest,
+		metrics:            base.metrics,
+		routeMode:          routeModeGroup,
+		group:              dbmodel.Group{},
+		passthroughEnabled: true,
 	}
 	if !groupOnly.canPassthrough() {
 		t.Fatal("group route without group or channel request options should passthrough")
@@ -128,11 +139,12 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 	groupOverride := `{"temperature":0}`
 	withGroupOverride := *base
 	withGroupOverride.relayRun = &relayRun{
-		inboundType:     base.inboundType,
-		internalRequest: base.internalRequest,
-		metrics:         base.metrics,
-		routeMode:       routeModeGroup,
-		group:           dbmodel.Group{ParamOverride: &groupOverride},
+		inboundType:        base.inboundType,
+		internalRequest:    base.internalRequest,
+		metrics:            base.metrics,
+		routeMode:          routeModeGroup,
+		group:              dbmodel.Group{ParamOverride: &groupOverride},
+		passthroughEnabled: true,
 	}
 	if withGroupOverride.canPassthrough() {
 		t.Fatal("group param override must use transformed path")
@@ -140,10 +152,11 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 
 	withGroupHeader := *base
 	withGroupHeader.relayRun = &relayRun{
-		inboundType:     base.inboundType,
-		internalRequest: base.internalRequest,
-		metrics:         base.metrics,
-		routeMode:       routeModeGroup,
+		inboundType:        base.inboundType,
+		internalRequest:    base.internalRequest,
+		metrics:            base.metrics,
+		routeMode:          routeModeGroup,
+		passthroughEnabled: true,
 		group: dbmodel.Group{CustomHeader: []dbmodel.CustomHeader{
 			{HeaderKey: "X-Group", HeaderValue: "value"},
 		}},

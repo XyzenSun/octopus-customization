@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Monitor, Globe, Clock, Shield, HelpCircle, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSettingList, useSetSetting, SettingKey } from '@/api/endpoints/setting';
 import { toast } from '@/components/common/Toast';
@@ -18,16 +19,19 @@ export function SettingSystem() {
     const [statsSaveInterval, setStatsSaveInterval] = useState('');
     const [corsAllowOrigins, setCorsAllowOrigins] = useState('');
     const [corsInputValue, setCorsInputValue] = useState('');
+    const [passthroughEnabled, setPassthroughEnabled] = useState(false);
 
     const initialProxyUrl = useRef('');
     const initialStatsSaveInterval = useRef('');
     const initialCorsAllowOrigins = useRef('');
+    const initialPassthroughEnabled = useRef(false);
 
     useEffect(() => {
         if (settings) {
             const proxy = settings.find(s => s.key === SettingKey.ProxyURL);
             const interval = settings.find(s => s.key === SettingKey.StatsSaveInterval);
             const cors = settings.find(s => s.key === SettingKey.CORSAllowOrigins);
+            const passthrough = settings.find(s => s.key === SettingKey.PassthroughEnabled);
             if (proxy) {
                 queueMicrotask(() => setProxyUrl(proxy.value));
                 initialProxyUrl.current = proxy.value;
@@ -39,6 +43,11 @@ export function SettingSystem() {
             if (cors) {
                 queueMicrotask(() => setCorsAllowOrigins(cors.value));
                 initialCorsAllowOrigins.current = cors.value;
+            }
+            if (passthrough) {
+                const enabled = passthrough.value === 'true';
+                queueMicrotask(() => setPassthroughEnabled(enabled));
+                initialPassthroughEnabled.current = enabled;
             }
         }
     }, [settings]);
@@ -55,6 +64,8 @@ export function SettingSystem() {
                     initialStatsSaveInterval.current = value;
                 } else if (key === SettingKey.CORSAllowOrigins) {
                     initialCorsAllowOrigins.current = value;
+                } else if (key === SettingKey.PassthroughEnabled) {
+                    initialPassthroughEnabled.current = value === 'true';
                 }
             }
         });
@@ -112,6 +123,16 @@ export function SettingSystem() {
     const handleRemoveCorsOrigin = (originToRemove: string) => {
         const nextOrigins = corsAllowOriginsList.filter(origin => origin !== originToRemove);
         saveCorsAllowOrigins(nextOrigins);
+    };
+
+    const handlePassthroughEnabledChange = (checked: boolean) => {
+        const value = checked ? 'true' : 'false';
+        setPassthroughEnabled(checked);
+        handleSave(
+            SettingKey.PassthroughEnabled,
+            value,
+            initialPassthroughEnabled.current ? 'true' : 'false'
+        );
     };
 
     return (
@@ -215,6 +236,26 @@ export function SettingSystem() {
                         </div>
                     </PopoverContent>
                 </Popover>
+            </div>
+
+            {/* 同协议透传 */}
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium">{t('passthrough.title')}</span>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>{t('passthrough.enabled.hint')}</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+                <Switch
+                    checked={passthroughEnabled}
+                    onCheckedChange={handlePassthroughEnabledChange}
+                    aria-label={t('passthrough.enabled.label')}
+                />
             </div>
         </div>
     );

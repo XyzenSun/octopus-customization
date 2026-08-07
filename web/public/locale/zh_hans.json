@@ -168,6 +168,13 @@
             "hint": "为空禁止跨域，* 允许所有",
             "example": "只允许指定域名: https://example.com,https://example2.com"
         },
+        "passthrough": {
+            "title": "同协议透传",
+            "enabled": {
+                "label": "启用同协议透传",
+                "hint": "入口和渠道协议一致且无需请求修改时，保留原始请求与响应；关闭后统一使用协议转换。"
+            }
+        },
         "circuitBreaker": {
             "title": "熔断器配置",
             "enabled": {

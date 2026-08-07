@@ -30,6 +30,7 @@ func newDirectChannelRelayRun(
 	internalRequest *llm.Request,
 	channelName string,
 	modelName string,
+	passthroughEnabled bool,
 ) (*relayRun, error) {
 	channel, err := op.ChannelGetByName(channelName, c.Request.Context())
 	if err != nil {
@@ -60,8 +61,9 @@ func newDirectChannelRelayRun(
 			StartTime:       time.Now(),
 			InternalRequest: internalRequest,
 		},
-		iter:      balancer.NewSingleIterator(channel.ID, modelName),
-		routeMode: routeModeDirectChannel,
+		iter:               balancer.NewSingleIterator(channel.ID, modelName),
+		routeMode:          routeModeDirectChannel,
+		passthroughEnabled: passthroughEnabled,
 	}, nil
 }
 
