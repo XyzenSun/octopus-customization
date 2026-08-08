@@ -92,8 +92,8 @@ export function CreateDialogContent() {
     };
 
     return (
-        <div className="flex h-full max-h-[calc(100vh-2rem)] min-h-0 overflow-hidden">
-            <div className="w-screen max-w-full md:max-w-xl h-full max-h-[calc(100vh-2rem)] min-h-0 flex flex-col overflow-hidden">
+        <div className="flex h-full max-h-[90vh] min-h-0 overflow-hidden">
+            <div className="w-full md:max-w-xl min-w-0 px-4 py-2 flex flex-col">
                 <MorphingDialogTitle className="shrink-0">
                     <header className="mb-6 flex items-center justify-between">
                         <h2 className="text-2xl font-bold text-card-foreground">{t('dialogTitle')}</h2>
@@ -107,7 +107,7 @@ export function CreateDialogContent() {
                         />
                     </header>
                 </MorphingDialogTitle>
-                <MorphingDialogDescription disableLayoutAnimation className="flex-1 min-h-0 overflow-auto">
+                <MorphingDialogDescription disableLayoutAnimation className="flex-1 min-h-0 overflow-y-auto">
                     <ChannelForm
                         formData={formData}
                         onFormDataChange={setFormData}
