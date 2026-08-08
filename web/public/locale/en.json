@@ -435,6 +435,7 @@
             "addHeader": "Add Header",
             "removeHeader": "Remove Header",
             "paramOverride": "Param Override",
+            "paramOverrideInvalid": "Param override is not a valid JSON object",
             "paramOverridePlaceholder": "Optional: JSON string to override request parameters",
             "saving": "Saving..."
         },
@@ -569,7 +570,6 @@
             "customHeaderAdd": "Add Header",
             "channelProxy": "Channel Proxy",
             "channelProxyPlaceholder": "Optional: proxy for this channel (overrides global proxy)",
-            "paramOverride": "Param Override",
             "paramOverridePlaceholder": "Optional: JSON string to override request params",
             "model": "Model",
             "enabled": "Enabled",

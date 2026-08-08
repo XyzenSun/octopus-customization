@@ -5,3 +5,5 @@ static/out/*
 .vscode
 __pycache__
 *.env
+# Claude Code 本地配置
+.claude/

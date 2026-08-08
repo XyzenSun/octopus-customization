@@ -61,6 +61,9 @@ func createGroup(c *gin.Context) {
 			return
 		}
 	}
+	if !validateParamOverride(c, group.ParamOverride) {
+		return
+	}
 	if err := op.GroupCreate(&group, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -80,6 +83,9 @@ func updateGroup(c *gin.Context) {
 			resp.Error(c, http.StatusBadRequest, err.Error())
 			return
 		}
+	}
+	if !validateParamOverride(c, req.ParamOverride) {
+		return
 	}
 	group, err := op.GroupUpdate(&req, c.Request.Context())
 	if err != nil {
