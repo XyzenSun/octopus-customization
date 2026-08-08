@@ -570,6 +570,7 @@
             "customHeaderAdd": "添加 Header",
             "channelProxy": "渠道代理",
             "channelProxyPlaceholder": "可选：仅对该渠道生效（覆盖全局代理）",
+            "paramOverride": "参数覆盖",
             "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数",
             "model": "模型",
             "enabled": "启用",
@@ -597,7 +598,8 @@
             "autoGroupRegex": "正则匹配",
             "matchRegex": "匹配正则",
             "matchRegexPlaceholder": "可选：用于匹配请求模型名称的正则表达式",
-            "remark": "备注"
+            "remark": "备注",
+            "paramOverrideInvalid": "参数覆盖不是合法的 JSON 对象"
         },
         "test": {
             "title": "模型测试",

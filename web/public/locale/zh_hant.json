@@ -570,6 +570,7 @@
             "customHeaderAdd": "新增 Header",
             "channelProxy": "供應源代理",
             "channelProxyPlaceholder": "可選：僅對該供應源生效（覆蓋全域代理）",
+            "paramOverride": "參數覆蓋",
             "paramOverridePlaceholder": "可選：JSON 字串，用於覆蓋請求參數",
             "model": "模型",
             "enabled": "啟用",
@@ -597,7 +598,8 @@
             "autoGroupRegex": "正規比對",
             "matchRegex": "匹配正規",
             "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
-            "remark": "備註"
+            "remark": "備註",
+            "paramOverrideInvalid": "參數覆蓋不是合法的 JSON 物件"
         },
         "test": {
             "title": "模型測試",

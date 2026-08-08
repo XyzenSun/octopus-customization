@@ -570,6 +570,7 @@
             "customHeaderAdd": "Add Header",
             "channelProxy": "Channel Proxy",
             "channelProxyPlaceholder": "Optional: proxy for this channel (overrides global proxy)",
+            "paramOverride": "Param Override",
             "paramOverridePlaceholder": "Optional: JSON string to override request params",
             "model": "Model",
             "enabled": "Enabled",
@@ -597,7 +598,8 @@
             "autoGroupRegex": "Regex",
             "matchRegex": "Match Regex",
             "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
-            "remark": "Remark"
+            "remark": "Remark",
+            "paramOverrideInvalid": "Param override is not a valid JSON object"
         },
         "test": {
             "title": "Model Test",
