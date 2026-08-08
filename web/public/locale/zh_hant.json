@@ -435,6 +435,7 @@
             "addHeader": "新增 Header",
             "removeHeader": "刪除 Header",
             "paramOverride": "參數覆蓋",
+            "paramOverrideInvalid": "參數覆蓋不是合法的 JSON 物件",
             "paramOverridePlaceholder": "可選：JSON 字串，用於覆蓋請求參數",
             "saving": "儲存中..."
         },
@@ -597,7 +598,8 @@
             "autoGroupRegex": "正規比對",
             "matchRegex": "匹配正規",
             "matchRegexPlaceholder": "可選：用於匹配請求模型名稱的正規表示式",
-            "remark": "備註"
+            "remark": "備註",
+            "paramOverrideInvalid": "參數覆蓋不是合法的 JSON 物件"
         },
         "test": {
             "title": "模型測試",

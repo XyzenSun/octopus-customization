@@ -76,6 +76,9 @@ func createChannel(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	if !validateParamOverride(c, channel.ParamOverride) {
+		return
+	}
 	if err := op.ChannelCreate(&channel, c.Request.Context()); err != nil {
 		resp.Error(c, http.StatusInternalServerError, err.Error())
 		return
@@ -98,6 +101,9 @@ func updateChannel(c *gin.Context) {
 	var req model.ChannelUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if !validateParamOverride(c, req.ParamOverride) {
 		return
 	}
 	channel, err := op.ChannelUpdate(&req, c.Request.Context())

@@ -17,6 +17,7 @@ import { MemberList } from './ItemList';
 import { matchesGroupName, memberKey, normalizeKey, MODE_LABELS } from './utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/animate-ui/components/animate/tooltip';
 import { GroupAdvancedOptionsDialog, type GroupRequestOptions } from './AdvancedOptions';
+import { isValidParamOverride } from '@/components/common/validators';
 
 
 
@@ -340,6 +341,12 @@ export function GroupEditor({
     const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!isValid) return;
+
+        // 与后端校验口径一致：param_override 非空时必须能序列化成 JSON object，否则提前拦截不发请求。
+        if (!isValidParamOverride(requestOptions.param_override, t('advanced.paramOverrideInvalid'))) {
+            return;
+        }
+
         onSubmit({
             name: groupName,
             match_regex: regexKey,

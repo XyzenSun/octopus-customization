@@ -9,6 +9,7 @@ import { useCreateChannel, ChannelType, AutoGroupType } from '@/api/endpoints/ch
 import { useTranslations } from 'next-intl';
 import { ChannelForm, type ChannelFormData } from './Form';
 import { TestPanel } from './TestPanel';
+import { isValidParamOverride } from '@/components/common/validators';
 
 export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
@@ -30,6 +31,7 @@ export function CreateDialogContent() {
         match_regex: '',
     });
     const t = useTranslations('channel.create');
+    const tForm = useTranslations('channel.form');
 
     const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -46,6 +48,9 @@ export function CreateDialogContent() {
 
         const channelProxy = formData.channel_proxy.trim();
         const paramOverride = formData.param_override.trim();
+        if (!isValidParamOverride(paramOverride, tForm('paramOverrideInvalid'))) {
+            return;
+        }
         createChannel.mutate(
             {
                 name: formData.name,
@@ -87,8 +92,8 @@ export function CreateDialogContent() {
     };
 
     return (
-        <div className="flex h-full max-h-[calc(100vh-2rem)] min-h-0 overflow-hidden">
-            <div className="w-screen max-w-full md:max-w-xl h-full max-h-[calc(100vh-2rem)] min-h-0 flex flex-col overflow-hidden">
+        <div className="flex h-full max-h-[90vh] min-h-0 overflow-hidden">
+            <div className="w-full md:max-w-xl min-w-0 px-4 py-2 flex flex-col">
                 <MorphingDialogTitle className="shrink-0">
                     <header className="mb-6 flex items-center justify-between">
                         <h2 className="text-2xl font-bold text-card-foreground">{t('dialogTitle')}</h2>
@@ -102,7 +107,7 @@ export function CreateDialogContent() {
                         />
                     </header>
                 </MorphingDialogTitle>
-                <MorphingDialogDescription disableLayoutAnimation className="flex-1 min-h-0 overflow-auto">
+                <MorphingDialogDescription disableLayoutAnimation className="flex-1 min-h-0 overflow-y-auto">
                     <ChannelForm
                         formData={formData}
                         onFormDataChange={setFormData}

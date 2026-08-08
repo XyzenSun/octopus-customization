@@ -435,6 +435,7 @@
             "addHeader": "Add Header",
             "removeHeader": "Remove Header",
             "paramOverride": "Param Override",
+            "paramOverrideInvalid": "Param override is not a valid JSON object",
             "paramOverridePlaceholder": "Optional: JSON string to override request parameters",
             "saving": "Saving..."
         },
@@ -597,7 +598,8 @@
             "autoGroupRegex": "Regex",
             "matchRegex": "Match Regex",
             "matchRegexPlaceholder": "Optional: regex pattern to match request model names",
-            "remark": "Remark"
+            "remark": "Remark",
+            "paramOverrideInvalid": "Param override is not a valid JSON object"
         },
         "test": {
             "title": "Model Test",

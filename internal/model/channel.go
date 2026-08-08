@@ -130,7 +130,14 @@ func (c *Channel) GetChannelKey() ChannelKey {
 		if !k.Enabled || k.ChannelKey == "" {
 			continue
 		}
-		if k.StatusCode == 429 && k.LastUseTimeStamp > 0 {
+		// key 429限流 或 服务端 503 则冷却一分钟
+		if (k.StatusCode == 429 && k.LastUseTimeStamp > 0) || (k.StatusCode == 503 && k.LastUseTimeStamp > 0) {
+			if nowSec-k.LastUseTimeStamp < int64(1*time.Minute/time.Second) {
+				continue
+			}
+		}
+		// key 401 或 403 禁止访问，冷却五分钟
+		if (k.StatusCode == 401 && k.LastUseTimeStamp > 0) || (k.StatusCode == 403 && k.LastUseTimeStamp > 0) {
 			if nowSec-k.LastUseTimeStamp < int64(5*time.Minute/time.Second) {
 				continue
 			}

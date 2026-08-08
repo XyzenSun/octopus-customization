@@ -10,6 +10,7 @@ import {
 import type { ChannelFormData } from './Form';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { toast } from '@/components/common/Toast';
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'client_error' | 'server_error' | 'network_error';
 
@@ -142,18 +143,33 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
         return { status, delay_ms: r.delay_ms, status_code: r.status_code, error: r.error };
     };
 
+    // 测试失败才提示;成功保持静默,由行内状态点反馈。
+    // 直接展示后端返回的 error 原文,不再二次加工格式。
+    const notifyFailure = (model: string, state: ModelTestState) => {
+        const detail = state.error?.trim();
+        if (detail) {
+            toast.error(detail, { description: model });
+        }
+    };
+
     const runOne = async (model: string) => {
         const req = buildRequest(model);
         updateResult(model, { status: 'testing' });
         try {
             const r = await testModel.mutateAsync(req as Parameters<typeof testModel.mutateAsync>[0]);
-            updateResult(model, toState(r));
+            const next = toState(r);
+            updateResult(model, next);
+            if (next.status !== 'ok') {
+                notifyFailure(model, next);
+            }
         } catch (e) {
             // HTTP 层错误(后端 4xx/5xx 等报错)走这里
-            updateResult(model, {
+            const next: ModelTestState = {
                 status: 'client_error',
                 error: (e as { message?: string })?.message ?? 'request failed',
-            });
+            };
+            updateResult(model, next);
+            notifyFailure(model, next);
         }
     };
 

@@ -27,6 +27,7 @@ import { TestPanel } from './TestPanel';
 import { formatMoney } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { isValidParamOverride } from '@/components/common/validators';
 
 export function CardContent({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
     const { setIsOpen } = useMorphingDialog();
@@ -61,6 +62,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         match_regex: channel.match_regex ?? '',
     });
     const t = useTranslations('channel.detail');
+    const tForm = useTranslations('channel.form');
 
     const currentView = isEditing ? 'editing' : 'viewing';
 
@@ -103,6 +105,9 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         }
 
         const nextParamOverride = formData.param_override.trim();
+        if (nextParamOverride !== '' && !isValidParamOverride(nextParamOverride, tForm('paramOverrideInvalid'))) {
+            return;
+        }
         const curParamOverride = channel.param_override ?? '';
         if (nextParamOverride !== curParamOverride) {
             // Empty string means "clear" for patch semantics; backend maps it to NULL.
