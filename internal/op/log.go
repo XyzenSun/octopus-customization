@@ -88,6 +88,12 @@ func notifySubscribers(relayLog model.RelayLog) {
 }
 
 func relayLogFlushToDB(ctx context.Context, capacity int) error {
+	// capacity 来自配置，实时写入模式下为 0；重建缓存时至少保留默认容量，
+	// 避免后续每次 append 都触发重新分配。
+	if capacity <= 0 {
+		capacity = model.DefaultRelayLogFlushSize
+	}
+
 	relayLogFlushLock.Lock()
 	defer relayLogFlushLock.Unlock()
 
@@ -111,7 +117,10 @@ func relayLogFlushToDB(ctx context.Context, capacity int) error {
 		// 重建底层数组而不是 reslice，避免数组持续引用已 flush 日志的 Request/ResponseContent 导致内存无法回收
 		remainingCount := len(relayLogCache) - flushedUpto
 		if remainingCount > 0 {
-			newCache := make([]model.RelayLog, remainingCount, capacity)
+			// 写库期间未持有 relayLogCacheLock，其他请求会继续 append，
+			// remainingCount 与 capacity 无关且可能更大，容量必须取二者较大值，
+			// 否则 len > cap 会在 make 处直接 panic。
+			newCache := make([]model.RelayLog, remainingCount, max(remainingCount, capacity))
 			copy(newCache, relayLogCache[flushedUpto:])
 			relayLogCache = newCache
 		} else {
