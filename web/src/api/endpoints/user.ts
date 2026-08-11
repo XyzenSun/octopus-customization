@@ -241,21 +241,28 @@ export function useChangeUsername() {
 }
 
 /**
- * 服务器时间与两步验证状态 Hook
+ * 获取服务器时间与两步验证状态
  *
- * 登录页用它诊断 TOTP 时间偏差：TOTP 基于 Unix 时间戳，服务器与手机的绝对时间
- * 相差超过 30 秒就会算出不同的验证码。同时返回 two_factor_enabled，
- * 让登录表单决定是否展示验证码输入框。
+ * 登录页在两个时机调用：进入页面时判断是否展示验证码输入框；登录失败时取一次
+ * 服务器时间拼进错误提示。TOTP 基于 Unix 时间戳，设备与服务器的绝对时间相差
+ * 超过 30 秒就会算出不同的验证码，给出服务器时间便于用户自查。
+ */
+export async function fetchServerTime() {
+    return apiClient.get<ServerTimeResponse>('/api/v1/user/time');
+}
+
+/**
+ * 两步验证状态 Hook
  *
- * refetchInterval 让时间持续走动，方便用户实时比对手机时钟。
+ * 只在挂载时取一次：登录成功后页面即卸载，持续轮询没有意义，徒增请求。
  */
 export function useServerTime(enabled = true) {
     return useQuery({
         queryKey: ['server-time'],
-        queryFn: async () => apiClient.get<ServerTimeResponse>('/api/v1/user/time'),
+        queryFn: fetchServerTime,
         enabled,
-        refetchInterval: 1000,
-        staleTime: 0,
+        staleTime: Infinity,
+        refetchOnWindowFocus: false,
         retry: false,
     });
 }

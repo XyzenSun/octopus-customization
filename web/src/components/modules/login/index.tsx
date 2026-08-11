@@ -6,10 +6,10 @@ import { useTranslations } from 'next-intl'
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { useLogin, useServerTime } from "@/api/endpoints/user"
+import { useLogin, useServerTime, fetchServerTime } from "@/api/endpoints/user"
 import { useAPIKeyLogin } from "@/api/endpoints/apikey"
 import Logo from "@/components/modules/logo"
-import { KeyRound, User, ShieldCheck, Clock } from "lucide-react"
+import { KeyRound, User, ShieldCheck } from "lucide-react"
 import {
   Tabs,
   TabsList,
@@ -36,10 +36,17 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
   // 只在用户名密码模式下轮询：API Key 登录与 TOTP 无关，没必要持续请求。
   const serverTimeQuery = useServerTime(mode === 'user')
   const twoFactorEnabled = serverTimeQuery.data?.two_factor_enabled ?? false
+  // TOTP 固定为 6 位纯数字，本地先校验一次，避免明显不合法的验证码浪费一次请求。
+  const isCodeValid = /^\d{6}$/.test(code)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (mode === 'user' && twoFactorEnabled && !isCodeValid) {
+      setError(t('twoFactor.invalid'))
+      return
+    }
 
     try {
       if (mode === 'user') {
@@ -55,8 +62,25 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
 
       onLoginSuccess?.()
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : t('error.generic')
-      setError(errorMessage)
+      // 账户登录：后端对密码错误和验证码错误返回同一个响应，前端同样不区分——
+      // 区分开来会泄露"密码已经猜对了"，降低撞库难度。
+      // 开启两步验证时附上服务器时间：TOTP 依赖绝对时间，设备与服务器相差超过
+      // 30 秒就会算出不同的验证码，这是最常见且最难自查的失败原因。
+      if (mode === 'user') {
+        if (twoFactorEnabled) {
+          try {
+            const { server_time, timezone } = await fetchServerTime()
+            setError(t('twoFactor.failedWithTime', { time: server_time, timezone }))
+            return
+          } catch {
+            // 取时间失败不应掩盖登录失败本身，退回通用提示
+          }
+        }
+        setError(t('error.generic'))
+        return
+      }
+      // API Key 登录与撞库防护无关，保留后端的具体错误（已禁用、已过期等）
+      setError(err instanceof Error ? err.message : t('error.generic'))
     }
   }
 
@@ -151,17 +175,6 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
                       required
                       disabled={isPending}
                     />
-                    {/* TOTP 依赖绝对时间：设备与服务器相差超过 30 秒就会算出不同的验证码。
-                        展示服务器时间（固定东八区）方便用户比对本机时钟，快速定位这类问题。 */}
-                    {serverTimeQuery.data && (
-                      <FieldDescription className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5" />
-                        {t('twoFactor.serverTime', {
-                          time: serverTimeQuery.data.server_time,
-                          timezone: serverTimeQuery.data.timezone,
-                        })}
-                      </FieldDescription>
-                    )}
                   </Field>
                 )}
               </TabsContent>
@@ -183,7 +196,11 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
 
             {error && <FieldDescription className="text-destructive">{error}</FieldDescription>}
 
-            <Button type="submit" disabled={isPending} className="w-full">
+            <Button
+              type="submit"
+              disabled={isPending || (mode === 'user' && twoFactorEnabled && !isCodeValid)}
+              className="w-full"
+            >
               {isPending ? t('button.loading') : t('button.submit')}
             </Button>
           </form>

@@ -20,7 +20,8 @@
         "twoFactor": {
             "label": "Verification Code",
             "placeholder": "Enter the 6-digit code",
-            "serverTime": "Server time: {time} ({timezone})"
+            "invalid": "Please enter a 6-digit code",
+            "failedWithTime": "Sign-in failed. Server time is {time} ({timezone}). Check your credentials, and make sure your authenticator device clock matches the server."
         }
     },
     "apiKeyDashboard": {
@@ -349,7 +350,8 @@
                 "setupFailed": "Failed to generate secret",
                 "codeInvalid": "Invalid verification code",
                 "enableSuccess": "Two-factor authentication enabled. Please sign in again.",
-                "disableSuccess": "Two-factor authentication disabled"
+                "disableSuccess": "Two-factor authentication disabled",
+                "codeIncomplete": "Please enter a 6-digit code"
             }
         },
         "info": {

@@ -45,6 +45,9 @@ export function TwoFactorSection({ onEnabled }: { onEnabled: () => void }) {
     const [disableCode, setDisableCode] = useState('');
 
     const enabled = serverTimeQuery.data?.two_factor_enabled ?? false;
+    // TOTP 固定为 6 位纯数字。输入框已过滤非数字，这里再校验长度，
+    // 让按钮在验证码不完整时保持禁用，避免明显不合法的输入发出请求。
+    const isValidCode = (value: string) => /^\d{6}$/.test(value);
 
     const handleSetup = () => {
         setEnableCode('');
@@ -55,6 +58,10 @@ export function TwoFactorSection({ onEnabled }: { onEnabled: () => void }) {
     };
 
     const handleEnable = () => {
+        if (!isValidCode(enableCode)) {
+            toast.error(t('account.twoFactor.codeIncomplete'));
+            return;
+        }
         enableMutation.mutate(enableCode, {
             onSuccess: () => {
                 setSetupData(null);
@@ -69,6 +76,10 @@ export function TwoFactorSection({ onEnabled }: { onEnabled: () => void }) {
     };
 
     const handleDisable = () => {
+        if (!isValidCode(disableCode)) {
+            toast.error(t('account.twoFactor.codeIncomplete'));
+            return;
+        }
         disableMutation.mutate(disableCode, {
             onSuccess: () => {
                 setDisableDialogOpen(false);
@@ -163,7 +174,7 @@ export function TwoFactorSection({ onEnabled }: { onEnabled: () => void }) {
                         </Button>
                         <Button
                             onClick={handleEnable}
-                            disabled={enableMutation.isPending || enableCode.length !== 6}
+                            disabled={enableMutation.isPending || !isValidCode(enableCode)}
                             className="rounded-xl"
                         >
                             {enableMutation.isPending ? t('account.saving') : t('account.twoFactor.confirm')}
@@ -202,7 +213,7 @@ export function TwoFactorSection({ onEnabled }: { onEnabled: () => void }) {
                         <Button
                             variant="destructive"
                             onClick={handleDisable}
-                            disabled={disableMutation.isPending || disableCode.length !== 6}
+                            disabled={disableMutation.isPending || !isValidCode(disableCode)}
                             className="rounded-xl"
                         >
                             {disableMutation.isPending ? t('account.saving') : t('account.twoFactor.disable')}

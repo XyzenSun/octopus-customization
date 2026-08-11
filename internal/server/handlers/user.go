@@ -10,6 +10,7 @@ import (
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/router"
+	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/gin-gonic/gin"
 )
 
@@ -61,15 +62,18 @@ func login(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	// 密码与验证码任一失败都返回同一个 ErrUnauthorized：区分开来等于告诉攻击者
+	// "密码已经猜对了，只差验证码"，把撞库难度从"猜对两个"降成"逐个击破"。
+	// 真实原因只写日志，供管理员排查。
 	if err := op.UserVerify(user.Username, user.Password); err != nil {
+		log.Warnf("login failed from %s: %v", c.ClientIP(), err)
 		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 		return
 	}
-	// 密码校验通过后才走 TOTP，失败计数因此只统计验证码环节。
-	// 错误信息带上原因（验证码错误 / 已锁定），密码环节仍保持笼统的 ErrUnauthorized，
-	// 不会因此泄露"用户名密码是否正确"。
+	// 密码校验通过后才走 TOTP，失败计数因此只统计验证码环节——
 	if err := op.TwoFactorVerifyLogin(user.Code); err != nil {
-		resp.Error(c, http.StatusUnauthorized, err.Error())
+		log.Warnf("login failed from %s: %v", c.ClientIP(), err)
+		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 		return
 	}
 	token, expire, err := auth.GenerateJWTToken(user.Expire)

@@ -20,7 +20,8 @@
         "twoFactor": {
             "label": "驗證碼",
             "placeholder": "請輸入 6 位驗證碼",
-            "serverTime": "伺服器時間：{time}（{timezone}）"
+            "invalid": "請輸入 6 位數字驗證碼",
+            "failedWithTime": "登入失敗。伺服器目前時間 {time}（{timezone}），請核對帳號密碼，並確認驗證器所在裝置的時間與伺服器一致。"
         }
     },
     "apiKeyDashboard": {
@@ -349,7 +350,8 @@
                 "setupFailed": "產生金鑰失敗",
                 "codeInvalid": "驗證碼錯誤",
                 "enableSuccess": "兩步驗證已開啟，請重新登入",
-                "disableSuccess": "兩步驗證已關閉"
+                "disableSuccess": "兩步驗證已關閉",
+                "codeIncomplete": "請輸入 6 位數字驗證碼"
             }
         },
         "info": {
