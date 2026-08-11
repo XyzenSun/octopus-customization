@@ -149,44 +149,62 @@ def generate_entry(model_id: str, cost: dict) -> str:
 def main():
     print(f"Fetching price data from {LLM_PRICE_URL}...")
     raw_price = fetch_price_data()
-    
+
     entries = []
+    seen_ids: set[str] = set()
     model_count = 0
-    
+    skipped_count = 0
+
+    def add_entry(model_id: str, cost: dict) -> bool:
+        """收录一个模型，重复的 id 跳过并返回 False。
+
+        models.dev 会把同一个模型收录在多个 provider 下（例如 glm-5.2 同时出现在
+        zhipuai 和 alibaba），若原样生成会产生重复的 map key，Go 编译直接报错
+        "duplicate key ... in map literal"。这里按先到先得去重——PROVIDERS 的顺序
+        即优先级，不对价格差异做取舍。
+        """
+        nonlocal skipped_count
+        if model_id in seen_ids:
+            skipped_count += 1
+            return False
+        seen_ids.add(model_id)
+        entries.append(generate_entry(model_id, cost))
+        return True
+
     for provider in PROVIDERS:
         if provider not in raw_price:
             print(f"  Provider '{provider}' not found, skipping...")
             continue
-            
+
         models = raw_price[provider].get("models", {})
         provider_count = 0
-        
+
         for model_data in models.values():
             model_id = model_data.get("id", "").lower()
             cost = model_data.get("cost", {})
-            
+
             if not model_id:
                 continue
-            
+
             # 添加原始模型
-            entries.append(generate_entry(model_id, cost))
-            provider_count += 1
-            
+            if add_entry(model_id, cost):
+                provider_count += 1
+
             # 收集所有别名
             aliases = []
-            
+
             # 1. Claude 模型自动生成别名
             aliases.extend(generate_claude_aliases(model_id))
-            
+
             # 2. 静态别名映射
             if model_id in MODEL_ALIASES:
                 aliases.extend(MODEL_ALIASES[model_id])
-            
+
             # 添加别名 (去重)
             for alias in set(aliases):
-                entries.append(generate_entry(alias.lower(), cost))
-                provider_count += 1
-            
+                if add_entry(alias.lower(), cost):
+                    provider_count += 1
+
         print(f"  {provider}: {provider_count} models")
         model_count += provider_count
     
@@ -203,6 +221,9 @@ def main():
     
     output_path.write_text(content, encoding="utf-8")
     print(f"\nGenerated {output_path} with {model_count} models")
+    if skipped_count:
+        # 打印出来而非静默跳过：数量突变往往意味着上游收录关系发生了变化，值得留意
+        print(f"Skipped {skipped_count} duplicate model id(s) across providers")
 
 
 if __name__ == "__main__":
