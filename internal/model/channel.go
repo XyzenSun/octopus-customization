@@ -42,8 +42,8 @@ type BaseUrl struct {
 }
 
 type CustomHeader struct {
-	HeaderKey   string `json:"header_key"`
-	HeaderValue string `json:"header_value"`
+	HeaderKey   string  `json:"header_key"`
+	HeaderValue *string `json:"header_value"`
 }
 
 type ChannelKey struct {

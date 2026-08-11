@@ -11,6 +11,7 @@ import type { ChannelFormData } from './Form';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { toast } from '@/components/common/Toast';
+import { normalizeCustomHeaders } from '@/components/common/CustomHeaderEditor';
 
 type TestStatus = 'idle' | 'testing' | 'ok' | 'client_error' | 'server_error' | 'network_error';
 
@@ -113,9 +114,7 @@ export function TestPanel({ channel, formData }: TestPanelProps) {
                 proxy: formData.proxy ?? false,
                 auto_sync: formData.auto_sync ?? false,
                 auto_group: formData.auto_group,
-                custom_header: (formData.custom_header ?? [])
-                    .map((h) => ({ header_key: h.header_key.trim(), header_value: h.header_value }))
-                    .filter((h) => h.header_key && h.header_value !== ''),
+                custom_header: normalizeCustomHeaders(formData.custom_header ?? []),
                 channel_proxy: formData.channel_proxy ?? null,
                 param_override: formData.param_override ?? null,
                 match_regex: formData.match_regex ?? null,

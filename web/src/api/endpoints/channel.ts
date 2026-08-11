@@ -32,7 +32,8 @@ export type BaseUrl = {
 
 export type CustomHeader = {
     header_key: string;
-    header_value: string;
+    // null 表示从上游请求中删除该 Header；空字符串表示保留 Header 但将值覆盖为空。
+    header_value: string | null;
 };
 
 export type ChannelKey = {

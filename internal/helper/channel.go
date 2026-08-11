@@ -27,6 +27,26 @@ func ChannelHttpClient(channel *model.Channel) (*http.Client, error) {
 	}
 }
 
+// ApplyCustomHeaders 把自定义 Header 规则应用到已经完成协议转换和认证配置的请求头。
+// 非 nil 值统一使用 Set（不存在则新增、存在则覆盖），空字符串会保留一个显式空值 Header；
+// nil 值借用 RFC 7396 的 null 删除语义，删除该 Header 的全部值。
+func ApplyCustomHeaders(headers http.Header, customHeaders []model.CustomHeader) {
+	if headers == nil {
+		return
+	}
+	for _, header := range customHeaders {
+		key := strings.TrimSpace(header.HeaderKey)
+		if key == "" {
+			continue
+		}
+		if header.HeaderValue == nil {
+			headers.Del(key)
+			continue
+		}
+		headers.Set(key, *header.HeaderValue)
+	}
+}
+
 func ChannelBaseUrlDelayUpdate(channel *model.Channel, ctx context.Context) {
 	if channel == nil {
 		return

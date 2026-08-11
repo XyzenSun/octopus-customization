@@ -96,6 +96,16 @@
             "success": "Copied",
             "failed": "Copy failed",
             "noContent": "Nothing to copy"
+        },
+        "customHeaderEditor": {
+            "actionLabel": "Header action",
+            "set": "Set / Add",
+            "empty": "Set to empty",
+            "remove": "Remove from request",
+            "valuePlaceholder": "Enter the value to set or add",
+            "emptyDescription": "Header is sent with an empty value",
+            "removeDescription": "Header is absent from the request",
+            "removeRule": "Delete this rule"
         }
     },
     "home": {
@@ -458,7 +468,6 @@
             "description": "Configure group-level request parameters and headers. Channel-level values override matching entries.",
             "customHeader": "Custom Headers",
             "headerKey": "Header Key",
-            "headerValue": "Header Value",
             "addHeader": "Add Header",
             "removeHeader": "Remove Header",
             "paramOverride": "Param Override",
@@ -593,7 +602,6 @@
             "apiKey": "API Key",
             "customHeader": "Custom Headers",
             "customHeaderKey": "Header Key",
-            "customHeaderValue": "Header Value",
             "customHeaderAdd": "Add Header",
             "channelProxy": "Channel Proxy",
             "channelProxyPlaceholder": "Optional: proxy for this channel (overrides global proxy)",

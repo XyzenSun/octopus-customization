@@ -96,6 +96,16 @@
             "success": "複製成功",
             "failed": "複製失敗",
             "noContent": "無可複製內容"
+        },
+        "customHeaderEditor": {
+            "actionLabel": "Header 操作",
+            "set": "覆蓋/新增",
+            "empty": "設為空值",
+            "remove": "從上游請求中移除",
+            "valuePlaceholder": "在此輸入要覆蓋或新增的 Value",
+            "emptyDescription": "傳送該 Header，但值為空",
+            "removeDescription": "請求中不再包含該 Header",
+            "removeRule": "刪除此設定項"
         }
     },
     "home": {
@@ -458,7 +468,6 @@
             "description": "設定分組層級的請求參數與請求頭；同名設定會被供應源層級覆蓋。",
             "customHeader": "自定義 Header",
             "headerKey": "Header Key",
-            "headerValue": "Header Value",
             "addHeader": "新增 Header",
             "removeHeader": "刪除 Header",
             "paramOverride": "參數覆蓋",
@@ -593,7 +602,6 @@
             "apiKey": "API Key",
             "customHeader": "自定義 Header",
             "customHeaderKey": "Header Key",
-            "customHeaderValue": "Header Value",
             "customHeaderAdd": "新增 Header",
             "channelProxy": "供應源代理",
             "channelProxyPlaceholder": "可選：僅對該供應源生效（覆蓋全域代理）",
