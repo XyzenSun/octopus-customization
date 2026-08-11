@@ -16,6 +16,11 @@
         "button": {
             "loading": "登入中...",
             "submit": "登入"
+        },
+        "twoFactor": {
+            "label": "驗證碼",
+            "placeholder": "請輸入 6 位驗證碼",
+            "serverTime": "伺服器時間：{time}（{timezone}）"
         }
     },
     "apiKeyDashboard": {
@@ -325,6 +330,26 @@
                 "change": "修改密碼",
                 "success": "密碼修改成功",
                 "failed": "密碼修改失敗"
+            },
+            "twoFactor": {
+                "label": "兩步驗證",
+                "statusEnabled": "已開啟，登入時需要輸入驗證碼",
+                "statusDisabled": "未開啟，僅使用密碼登入",
+                "enable": "啟用",
+                "disable": "關閉",
+                "cancel": "取消",
+                "confirm": "確認啟用",
+                "setupTitle": "啟用兩步驗證",
+                "setupDescription": "使用驗證器 App 掃描 QR Code，然後輸入 6 位驗證碼完成綁定。",
+                "qrAlt": "兩步驗證 QR Code",
+                "manualEntry": "無法掃碼時，可手動輸入以下金鑰：",
+                "codePlaceholder": "6 位驗證碼",
+                "disableTitle": "關閉兩步驗證",
+                "disableDescription": "請輸入目前驗證器中的 6 位驗證碼以確認關閉。",
+                "setupFailed": "產生金鑰失敗",
+                "codeInvalid": "驗證碼錯誤",
+                "enableSuccess": "兩步驗證已開啟，請重新登入",
+                "disableSuccess": "兩步驗證已關閉"
             }
         },
         "info": {

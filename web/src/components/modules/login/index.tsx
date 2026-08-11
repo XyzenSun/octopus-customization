@@ -6,10 +6,10 @@ import { useTranslations } from 'next-intl'
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { useLogin } from "@/api/endpoints/user"
+import { useLogin, useServerTime } from "@/api/endpoints/user"
 import { useAPIKeyLogin } from "@/api/endpoints/apikey"
 import Logo from "@/components/modules/logo"
-import { KeyRound, User } from "lucide-react"
+import { KeyRound, User, ShieldCheck, Clock } from "lucide-react"
 import {
   Tabs,
   TabsList,
@@ -27,11 +27,15 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
   const [mode, setMode] = useState<LoginMode>('user')
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
   const [apiKey, setApiKey] = useState("")
   const [error, setError] = useState<string | null>(null)
 
   const loginMutation = useLogin()
   const apiKeyLoginMutation = useAPIKeyLogin()
+  // 只在用户名密码模式下轮询：API Key 登录与 TOTP 无关，没必要持续请求。
+  const serverTimeQuery = useServerTime(mode === 'user')
+  const twoFactorEnabled = serverTimeQuery.data?.two_factor_enabled ?? false
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -42,6 +46,7 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
         await loginMutation.mutateAsync({
           username,
           password,
+          code: twoFactorEnabled ? code : undefined,
           expire: 86400,
         })
       } else {
@@ -60,6 +65,7 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
   const handleModeChange = (value: string) => {
     setMode(value as LoginMode)
     setError(null)
+    setCode("")
   }
 
   return (
@@ -127,6 +133,37 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
                     disabled={isPending}
                   />
                 </Field>
+                {twoFactorEnabled && (
+                  <Field>
+                    <FieldLabel htmlFor="code" className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4" />
+                      {t('twoFactor.label')}
+                    </FieldLabel>
+                    <Input
+                      id="code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder={t('twoFactor.placeholder')}
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+                      required
+                      disabled={isPending}
+                    />
+                    {/* TOTP 依赖绝对时间：设备与服务器相差超过 30 秒就会算出不同的验证码。
+                        展示服务器时间（固定东八区）方便用户比对本机时钟，快速定位这类问题。 */}
+                    {serverTimeQuery.data && (
+                      <FieldDescription className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5" />
+                        {t('twoFactor.serverTime', {
+                          time: serverTimeQuery.data.server_time,
+                          timezone: serverTimeQuery.data.timezone,
+                        })}
+                      </FieldDescription>
+                    )}
+                  </Field>
+                )}
               </TabsContent>
               <TabsContent value="apikey">
                 <Field>

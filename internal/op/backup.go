@@ -44,6 +44,7 @@ func DBExportAll(ctx context.Context, includeLogs, includeStats bool) (*model.DB
 	if err := conn.Find(&d.Settings).Error; err != nil {
 		return nil, fmt.Errorf("export settings: %w", err)
 	}
+	d.Settings = excludeTwoFactorSetting(d.Settings)
 
 	if includeStats {
 		if err := conn.Find(&d.StatsTotal).Error; err != nil {
@@ -194,6 +195,7 @@ func createUpsertAll[T any](tx *gorm.DB, rows []T, columns []clause.Column) (int
 }
 
 func createUpsertSettings(tx *gorm.DB, rows []model.Setting) (int64, error) {
+	rows = excludeTwoFactorSetting(rows)
 	if len(rows) == 0 {
 		return 0, nil
 	}
@@ -202,4 +204,19 @@ func createUpsertSettings(tx *gorm.DB, rows []model.Setting) (int64, error) {
 		DoUpdates: clause.AssignmentColumns([]string{"value"}),
 	}).Create(&rows)
 	return result.RowsAffected, result.Error
+}
+
+// excludeTwoFactorSetting 把两步验证开关排除在备份之外。
+// 密钥存在 users 表且不参与导出，开关跟着备份走的话，恢复到新环境会变成
+// "已开启但没有密钥"——任何验证码都算不出来，直接把人锁死。
+// 导出和导入两侧都过滤：导出侧防止旧备份带出开关，导入侧防止手工构造的备份覆盖它。
+func excludeTwoFactorSetting(rows []model.Setting) []model.Setting {
+	filtered := make([]model.Setting, 0, len(rows))
+	for _, row := range rows {
+		if row.Key == model.SettingKeyTwoFactorEnabled {
+			continue
+		}
+		filtered = append(filtered, row)
+	}
+	return filtered
 }

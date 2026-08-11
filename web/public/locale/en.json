@@ -16,6 +16,11 @@
         "button": {
             "loading": "Logging in...",
             "submit": "Login"
+        },
+        "twoFactor": {
+            "label": "Verification Code",
+            "placeholder": "Enter the 6-digit code",
+            "serverTime": "Server time: {time} ({timezone})"
         }
     },
     "apiKeyDashboard": {
@@ -325,6 +330,26 @@
                 "change": "Change Password",
                 "success": "Password changed successfully",
                 "failed": "Failed to change password"
+            },
+            "twoFactor": {
+                "label": "Two-Factor Authentication",
+                "statusEnabled": "Enabled. A verification code is required to sign in.",
+                "statusDisabled": "Disabled. Signing in with password only.",
+                "enable": "Enable",
+                "disable": "Disable",
+                "cancel": "Cancel",
+                "confirm": "Confirm",
+                "setupTitle": "Enable Two-Factor Authentication",
+                "setupDescription": "Scan the QR code with your authenticator app, then enter the 6-digit code to finish.",
+                "qrAlt": "Two-factor authentication QR code",
+                "manualEntry": "If you can't scan the code, enter this secret manually:",
+                "codePlaceholder": "6-digit code",
+                "disableTitle": "Disable Two-Factor Authentication",
+                "disableDescription": "Enter the current 6-digit code from your authenticator to confirm.",
+                "setupFailed": "Failed to generate secret",
+                "codeInvalid": "Invalid verification code",
+                "enableSuccess": "Two-factor authentication enabled. Please sign in again.",
+                "disableSuccess": "Two-factor authentication disabled"
             }
         },
         "info": {

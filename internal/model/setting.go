@@ -25,6 +25,7 @@ const (
 	SettingKeyCircuitBreakerMaxCooldown          SettingKey = "circuit_breaker_max_cooldown"             // 熔断最大冷却时间（秒），指数退避上限
 	SettingKeyCircuitBreakerEnabled              SettingKey = "circuit_breaker_enabled"                  // 熔断器全局开关
 	SettingKeyPassthroughEnabled                 SettingKey = "passthrough_enabled"                      // 协议直通全局开关
+	SettingKeyTwoFactorEnabled                   SettingKey = "two_factor_enabled"                       // 两步验证(TOTP)开关，密钥另存于 users 表
 )
 
 // 默认值常量
@@ -58,6 +59,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyCircuitBreakerMaxCooldown, Value: "600"},         // 默认最大冷却600秒（10分钟）
 		{Key: SettingKeyCircuitBreakerEnabled, Value: "true"},            // 默认启用熔断器
 		{Key: SettingKeyPassthroughEnabled, Value: "false"},              // Beta 功能默认关闭协议直通
+		{Key: SettingKeyTwoFactorEnabled, Value: "false"},                // 两步验证默认关闭
 	}
 }
 
@@ -102,6 +104,11 @@ func (s *Setting) Validate() error {
 	case SettingKeyPassthroughEnabled:
 		if s.Value != "true" && s.Value != "false" {
 			return fmt.Errorf("passthrough enabled must be true or false")
+		}
+		return nil
+	case SettingKeyTwoFactorEnabled:
+		if s.Value != "true" && s.Value != "false" {
+			return fmt.Errorf("two factor enabled must be true or false")
 		}
 		return nil
 	case SettingKeyProxyURL:
