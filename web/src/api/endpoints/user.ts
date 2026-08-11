@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { apiClient, setAuthStoreGetter } from '../client';
@@ -12,6 +12,7 @@ export interface UserLoginRequest {
     username: string;
     password: string;
     expire: number; // token 过期时间（秒）
+    code?: string; // TOTP 验证码，未开启两步验证时可省略
 }
 
 /**
@@ -35,6 +36,24 @@ export interface ChangePasswordRequest {
  */
 export interface ChangeUsernameRequest {
     new_username: string;
+}
+
+/**
+ * 服务器时间与两步验证状态（登录页在未登录状态下调用）
+ */
+export interface ServerTimeResponse {
+    server_time: string;
+    timezone: string;
+    two_factor_enabled: boolean;
+}
+
+/**
+ * 两步验证绑定信息
+ */
+export interface TwoFactorSetupResponse {
+    secret: string;
+    uri: string;
+    qr_code: string; // data:image/png;base64,... 可直接作为 <img src>
 }
 
 /**
@@ -222,15 +241,87 @@ export function useChangeUsername() {
 }
 
 /**
+ * 获取服务器时间与两步验证状态
+ *
+ * 登录页在两个时机调用：进入页面时判断是否展示验证码输入框；登录失败时取一次
+ * 服务器时间拼进错误提示。TOTP 基于 Unix 时间戳，设备与服务器的绝对时间相差
+ * 超过 30 秒就会算出不同的验证码，给出服务器时间便于用户自查。
+ */
+export async function fetchServerTime() {
+    return apiClient.get<ServerTimeResponse>('/api/v1/user/time');
+}
+
+/**
+ * 两步验证状态 Hook
+ *
+ * 只在挂载时取一次：登录成功后页面即卸载，持续轮询没有意义，徒增请求。
+ */
+export function useServerTime(enabled = true) {
+    return useQuery({
+        queryKey: ['server-time'],
+        queryFn: fetchServerTime,
+        enabled,
+        staleTime: Infinity,
+        refetchOnWindowFocus: false,
+        retry: false,
+    });
+}
+
+/**
+ * 生成两步验证密钥 Hook（绑定流程第一步）
+ *
+ * 每次调用都会生成新密钥覆盖旧的，但不会开启开关——必须再调 useEnableTwoFactor
+ * 验证一次验证码才真正生效。
+ */
+export function useSetupTwoFactor() {
+    return useMutation({
+        mutationFn: async () => {
+            return apiClient.post<TwoFactorSetupResponse>('/api/v1/user/2fa/setup', {});
+        },
+        onError: (error) => {
+            logger.error('两步验证初始化失败:', error);
+        },
+    });
+}
+
+/**
+ * 启用两步验证 Hook（绑定流程第二步）
+ */
+export function useEnableTwoFactor() {
+    return useMutation({
+        mutationFn: async (code: string) => {
+            return apiClient.post<string>('/api/v1/user/2fa/enable', { code });
+        },
+        onError: (error) => {
+            logger.error('两步验证启用失败:', error);
+        },
+    });
+}
+
+/**
+ * 关闭两步验证 Hook，需提供当前验证码
+ */
+export function useDisableTwoFactor() {
+    return useMutation({
+        mutationFn: async (code: string) => {
+            return apiClient.post<string>('/api/v1/user/2fa/disable', { code });
+        },
+        onError: (error) => {
+            logger.error('两步验证关闭失败:', error);
+        },
+    });
+}
+
+/**
  * 认证状态和方法 Hook
- * 
+ *
  * @example
  * const auth = useAuth();
- * 
+ *
  * if (auth.isAuthenticated) {
  *   // 已登录
  * }
- * 
+ *
  * auth.logout(); // 登出
  */
 export function useAuth() {

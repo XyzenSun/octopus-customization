@@ -16,6 +16,12 @@
         "button": {
             "loading": "登录中...",
             "submit": "登录"
+        },
+        "twoFactor": {
+            "label": "验证码",
+            "placeholder": "请输入 6 位验证码",
+            "invalid": "请输入 6 位数字验证码",
+            "failedWithTime": "登录失败。服务器当前时间 {time}（{timezone}），请核对账号密码，并确认验证器所在设备的时间与服务器一致。"
         }
     },
     "apiKeyDashboard": {
@@ -325,6 +331,27 @@
                 "change": "修改密码",
                 "success": "密码修改成功",
                 "failed": "密码修改失败"
+            },
+            "twoFactor": {
+                "label": "两步验证",
+                "statusEnabled": "已开启，登录时需要输入验证码",
+                "statusDisabled": "未开启，仅使用密码登录",
+                "enable": "启用",
+                "disable": "关闭",
+                "cancel": "取消",
+                "confirm": "确认启用",
+                "setupTitle": "启用两步验证",
+                "setupDescription": "使用验证器 App 扫描二维码，然后输入 6 位验证码完成绑定。",
+                "qrAlt": "两步验证二维码",
+                "manualEntry": "无法扫码时，可手动输入以下密钥：",
+                "codePlaceholder": "6 位验证码",
+                "disableTitle": "关闭两步验证",
+                "disableDescription": "请输入当前验证器中的 6 位验证码以确认关闭。",
+                "setupFailed": "生成密钥失败",
+                "codeInvalid": "验证码错误",
+                "enableSuccess": "两步验证已开启，请重新登录",
+                "disableSuccess": "两步验证已关闭",
+                "codeIncomplete": "请输入 6 位数字验证码"
             }
         },
         "info": {
@@ -436,7 +463,7 @@
             "removeHeader": "删除 Header",
             "paramOverride": "参数覆盖",
             "paramOverrideInvalid": "参数覆盖不是合法的 JSON 对象",
-            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数",
+            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数；值为 null 表示删除该参数，如 {\"temperature\": null}",
             "saving": "保存中..."
         },
         "mode": {
@@ -571,7 +598,7 @@
             "channelProxy": "渠道代理",
             "channelProxyPlaceholder": "可选：仅对该渠道生效（覆盖全局代理）",
             "paramOverride": "参数覆盖",
-            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数",
+            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数；值为 null 表示删除该参数，如 {\"temperature\": null}",
             "model": "模型",
             "enabled": "启用",
             "proxy": "使用代理",

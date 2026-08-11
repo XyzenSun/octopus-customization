@@ -16,6 +16,12 @@
         "button": {
             "loading": "Logging in...",
             "submit": "Login"
+        },
+        "twoFactor": {
+            "label": "Verification Code",
+            "placeholder": "Enter the 6-digit code",
+            "invalid": "Please enter a 6-digit code",
+            "failedWithTime": "Sign-in failed. Server time is {time} ({timezone}). Check your credentials, and make sure your authenticator device clock matches the server."
         }
     },
     "apiKeyDashboard": {
@@ -325,6 +331,27 @@
                 "change": "Change Password",
                 "success": "Password changed successfully",
                 "failed": "Failed to change password"
+            },
+            "twoFactor": {
+                "label": "Two-Factor Authentication",
+                "statusEnabled": "Enabled. A verification code is required to sign in.",
+                "statusDisabled": "Disabled. Signing in with password only.",
+                "enable": "Enable",
+                "disable": "Disable",
+                "cancel": "Cancel",
+                "confirm": "Confirm",
+                "setupTitle": "Enable Two-Factor Authentication",
+                "setupDescription": "Scan the QR code with your authenticator app, then enter the 6-digit code to finish.",
+                "qrAlt": "Two-factor authentication QR code",
+                "manualEntry": "If you can't scan the code, enter this secret manually:",
+                "codePlaceholder": "6-digit code",
+                "disableTitle": "Disable Two-Factor Authentication",
+                "disableDescription": "Enter the current 6-digit code from your authenticator to confirm.",
+                "setupFailed": "Failed to generate secret",
+                "codeInvalid": "Invalid verification code",
+                "enableSuccess": "Two-factor authentication enabled. Please sign in again.",
+                "disableSuccess": "Two-factor authentication disabled",
+                "codeIncomplete": "Please enter a 6-digit code"
             }
         },
         "info": {
@@ -436,7 +463,7 @@
             "removeHeader": "Remove Header",
             "paramOverride": "Param Override",
             "paramOverrideInvalid": "Param override is not a valid JSON object",
-            "paramOverridePlaceholder": "Optional: JSON string to override request parameters",
+            "paramOverridePlaceholder": "Optional: JSON string to override request parameters. A null value removes the parameter, e.g. {\"temperature\": null}",
             "saving": "Saving..."
         },
         "mode": {
@@ -571,7 +598,7 @@
             "channelProxy": "Channel Proxy",
             "channelProxyPlaceholder": "Optional: proxy for this channel (overrides global proxy)",
             "paramOverride": "Param Override",
-            "paramOverridePlaceholder": "Optional: JSON string to override request params",
+            "paramOverridePlaceholder": "Optional: JSON string to override request params. A null value removes the parameter, e.g. {\"temperature\": null}",
             "model": "Model",
             "enabled": "Enabled",
             "proxy": "Use Proxy",

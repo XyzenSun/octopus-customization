@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useChangeUsername, useChangePassword, useAuth } from '@/api/endpoints/user';
 import { toast } from '@/components/common/Toast';
+import { TwoFactorSection } from './TwoFactor';
 
 export function SettingAccount() {
     const t = useTranslations('setting');
@@ -171,6 +172,11 @@ export function SettingAccount() {
                     </Button>
                 </div>
             </div>
+
+            <div className="border-t border-border" />
+
+            {/* 两步验证 */}
+            <TwoFactorSection onEnabled={logout} />
         </div>
     );
 }

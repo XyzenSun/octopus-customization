@@ -54,6 +54,12 @@ func setSetting(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	// 两步验证开关必须走 /user/2fa/enable|disable，校验 TOTP 验证码。
+
+	if setting.Key == model.SettingKeyTwoFactorEnabled {
+		resp.Error(c, http.StatusForbidden, "two factor authentication must be changed via /api/v1/user/2fa")
+		return
+	}
 	if err := setting.Validate(); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return

@@ -415,7 +415,7 @@ func (ra *relayAttempt) applyRequestOptions(outboundRequest *httpclient.Request)
 			if err := json.Unmarshal(outboundRequest.Body, &bodyMap); err != nil {
 				log.Warnf("failed to unmarshal request body: %v, skipping param_override", err)
 			} else {
-				maps.Copy(bodyMap, override)
+				applyParamOverride(bodyMap, override)
 				modifiedBody, err := json.Marshal(bodyMap)
 				if err != nil {
 					log.Warnf("failed to marshal modified body: %v, skipping param_override", err)
@@ -436,6 +436,19 @@ func (ra *relayAttempt) applyRequestOptions(outboundRequest *httpclient.Request)
 	}
 }
 
+// applyParamOverride 把 override 的顶层键合并进请求体。
+//  RFC 7386（JSON Merge Patch）：值为 JSON null 表示删除该参数，
+// 其余值（含 0/false/""/[]/{}）都是正常的参数值，照常覆盖。
+func applyParamOverride(bodyMap, override map[string]any) {
+	for key, value := range override {
+		if value == nil {
+			delete(bodyMap, key)
+			continue
+		}
+		bodyMap[key] = value
+	}
+}
+
 func (ra *relayAttempt) mergedParamOverride() (map[string]any, string, bool) {
 	merged := make(map[string]any)
 	configured := false
@@ -448,6 +461,8 @@ func (ra *relayAttempt) mergedParamOverride() (map[string]any, string, bool) {
 			log.Warnf("failed to unmarshal %s param_override: %v, skipping", scope, err)
 			return
 		}
+		// 两级配置的叠加，null 当普通值参与覆盖而非在此删除：
+		// group ： {"a":null}、channel ：{"a":"x"} 时结果是 "x"
 		maps.Copy(merged, override)
 		configured = true
 	}

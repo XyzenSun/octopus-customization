@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
@@ -9,6 +10,7 @@ import (
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/router"
+	"github.com/bestruirui/octopus/internal/utils/log"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,6 +20,12 @@ func init() {
 		AddRoute(
 			router.NewRoute("/login", http.MethodPost).
 				Handle(login),
+		)
+	// 登录页需要在未登录状态下展示服务器时间来诊断 TOTP 时间偏差，因此不加鉴权。
+	router.NewGroupRouter("/api/v1/user").
+		AddRoute(
+			router.NewRoute("/time", http.MethodGet).
+				Handle(serverTime),
 		)
 	router.NewGroupRouter("/api/v1/user").
 		Use(middleware.Auth()).
@@ -33,6 +41,18 @@ func init() {
 		AddRoute(
 			router.NewRoute("/status", http.MethodGet).
 				Handle(status),
+		).
+		AddRoute(
+			router.NewRoute("/2fa/setup", http.MethodPost).
+				Handle(twoFactorSetup),
+		).
+		AddRoute(
+			router.NewRoute("/2fa/enable", http.MethodPost).
+				Handle(twoFactorEnable),
+		).
+		AddRoute(
+			router.NewRoute("/2fa/disable", http.MethodPost).
+				Handle(twoFactorDisable),
 		)
 }
 
@@ -42,7 +62,17 @@ func login(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
 		return
 	}
+	// 密码与验证码任一失败都返回同一个 ErrUnauthorized：区分开来等于告诉攻击者
+	// "密码已经猜对了，只差验证码"，把撞库难度从"猜对两个"降成"逐个击破"。
+	// 真实原因只写日志，供管理员排查。
 	if err := op.UserVerify(user.Username, user.Password); err != nil {
+		log.Warnf("login failed from %s: %v", c.ClientIP(), err)
+		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
+		return
+	}
+	// 密码校验通过后才走 TOTP，失败计数因此只统计验证码环节——
+	if err := op.TwoFactorVerifyLogin(user.Code); err != nil {
+		log.Warnf("login failed from %s: %v", c.ClientIP(), err)
 		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 		return
 	}
@@ -82,4 +112,52 @@ func changeUsername(c *gin.Context) {
 
 func status(c *gin.Context) {
 	resp.Success(c, "ok")
+}
+
+// serverTime 固定按东八区展示。TOTP 本身基于 Unix 时间戳、与时区无关，
+// 固定时区只是给用户一个稳定的比对基准——服务器常跑在 UTC 容器里，
+// 直接展示本地时区会让人误以为差了 8 小时是故障。
+func serverTime(c *gin.Context) {
+	const timezoneName = "UTC+8"
+	location := time.FixedZone(timezoneName, 8*60*60)
+	resp.Success(c, model.ServerTimeResponse{
+		ServerTime:       time.Now().In(location).Format("2006-01-02 15:04:05"),
+		Timezone:         timezoneName,
+		TwoFactorEnabled: op.TwoFactorEnabled(),
+	})
+}
+
+func twoFactorSetup(c *gin.Context) {
+	setup, err := op.TwoFactorSetup()
+	if err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp.Success(c, setup)
+}
+
+func twoFactorEnable(c *gin.Context) {
+	var req model.TwoFactorCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.TwoFactorEnable(req.Code); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp.Success(c, "two factor authentication enabled")
+}
+
+func twoFactorDisable(c *gin.Context) {
+	var req model.TwoFactorCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		resp.Error(c, http.StatusBadRequest, resp.ErrInvalidJSON)
+		return
+	}
+	if err := op.TwoFactorDisable(req.Code); err != nil {
+		resp.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	resp.Success(c, "two factor authentication disabled")
 }
