@@ -3,7 +3,6 @@ package relay
 import (
 	"context"
 	"encoding/json"
-	"maps"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/model"
@@ -212,7 +211,8 @@ func (m *RelayMetrics) requestContent() []byte {
 	}
 
 	// 日志里的请求体要反映本次实际发给上游的参数覆盖，但失败解析时保留原始可审计内容。
-	maps.Copy(reqMap, override)
+	// 复用上游请求的合并逻辑，确保 null 同样表示删除，而不是在日志里错误地显示为显式空值。
+	applyParamOverride(reqMap, override)
 	finalJSON, err := json.Marshal(reqMap)
 	if err != nil {
 		return reqJSON
