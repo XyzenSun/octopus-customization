@@ -20,6 +20,8 @@ var (
 	clientLock         sync.RWMutex
 )
 
+var customProxyClients sync.Map // customProxyClients 按代理地址保存复用连接池的 *http.Client。
+
 // GetHTTPClientSystemProxy returns a cached http.Client.
 // - useProxy=false: bypass proxy
 // - useProxy=true: use proxy settings from system/app settings (setting key: proxy_url)
@@ -52,13 +54,16 @@ func GetHTTPClientSystemProxy(useProxy bool) (*http.Client, error) {
 		if err != nil {
 			return nil, err
 		}
+		if systemProxyClient != nil {
+			systemProxyClient.CloseIdleConnections()
+		}
 		systemProxyClient = client
 		systemProxyURL = currentProxyURL
 		return systemProxyClient, nil
 	}
 
 	clientLock.RLock()
-	if !useProxy && systemDirectClient != nil {
+	if systemDirectClient != nil {
 		clientLock.RUnlock()
 		return systemDirectClient, nil
 	}
@@ -78,13 +83,24 @@ func GetHTTPClientSystemProxy(useProxy bool) (*http.Client, error) {
 	return systemDirectClient, nil
 }
 
-// GetHTTPClientCustomProxy returns a NEW http.Client every time (no reuse).
+// GetHTTPClientCustomProxy returns a cached http.Client for each proxy URL.
 // proxyURL supports: http, https, socks, socks5
 func GetHTTPClientCustomProxy(proxyURL string) (*http.Client, error) {
 	if proxyURL == "" {
 		return nil, fmt.Errorf("proxy url is empty")
 	}
-	return newHTTPClientCustomProxy(proxyURL)
+	if cached, ok := customProxyClients.Load(proxyURL); ok {
+		return cached.(*http.Client), nil
+	}
+	client, err := newHTTPClientCustomProxy(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	actual, loaded := customProxyClients.LoadOrStore(proxyURL, client)
+	if loaded {
+		client.CloseIdleConnections()
+	}
+	return actual.(*http.Client), nil
 }
 
 func clonedDefaultTransport() (*http.Transport, error) {

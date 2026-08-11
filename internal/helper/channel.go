@@ -2,7 +2,6 @@ package helper
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -15,16 +14,13 @@ import (
 )
 
 func ChannelHttpClient(channel *model.Channel) (*http.Client, error) {
-	if channel == nil {
-		return nil, errors.New("channel is nil")
-	}
 	if !channel.Proxy {
 		return client.GetHTTPClientSystemProxy(false)
-	} else if channel.ChannelProxy == nil || strings.TrimSpace(*channel.ChannelProxy) == "" {
-		return client.GetHTTPClientSystemProxy(true)
-	} else {
-		return client.GetHTTPClientCustomProxy(strings.TrimSpace(*channel.ChannelProxy))
 	}
+	if channel.ChannelProxy == nil || strings.TrimSpace(*channel.ChannelProxy) == "" {
+		return client.GetHTTPClientSystemProxy(true)
+	}
+	return client.GetHTTPClientCustomProxy(strings.TrimSpace(*channel.ChannelProxy))
 }
 
 // ApplyCustomHeaders 把自定义 Header 规则应用到已经完成协议转换和认证配置的请求头。
@@ -51,14 +47,14 @@ func ChannelBaseUrlDelayUpdate(channel *model.Channel, ctx context.Context) {
 	if channel == nil {
 		return
 	}
+	httpClient, err := ChannelHttpClient(channel)
+	if err != nil {
+		log.Warnf("failed to get http client (channel=%d): %v", channel.ID, err)
+		return
+	}
 	newBaseUrls := make([]model.BaseUrl, 0, len(channel.BaseUrls))
 	for _, baseUrl := range channel.BaseUrls {
 		if baseUrl.URL == "" {
-			continue
-		}
-		httpClient, err := ChannelHttpClient(channel)
-		if err != nil {
-			log.Warnf("failed to get http client (channel=%d): %v", channel.ID, err)
 			continue
 		}
 		delay, err := GetUrlDelay(httpClient, baseUrl.URL, ctx)
