@@ -3,6 +3,7 @@ package op
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/bestruirui/octopus/internal/db"
@@ -38,33 +39,25 @@ func ChannelCreate(channel *model.Channel, ctx context.Context) error {
 	return nil
 }
 
-// ChannelKeyUpdate 仅更新 ChannelKey 的内存缓存（不落库），并标记为需要在 SaveCache 时写入数据库。
-func ChannelKeyUpdate(key model.ChannelKey) error {
+// ChannelKeyUpdate 原子更新 ChannelKey 的运行状态和费用增量，并标记为需要持久化。
+func ChannelKeyUpdate(key model.ChannelKey, costDelta float64) error {
 	if key.ID == 0 || key.ChannelID == 0 {
 		return fmt.Errorf("invalid channel key")
 	}
-	ch, ok := channelCache.Get(key.ChannelID)
-	if !ok {
-		return fmt.Errorf("channel not found")
-	}
-	if len(ch.Keys) > 0 {
-		keys := make([]model.ChannelKey, len(ch.Keys))
-		copy(keys, ch.Keys)
-		for i := range keys {
-			if keys[i].ID == key.ID {
-				keys[i] = key
-				break
-			}
-		}
-		ch.Keys = keys
-	}
-	channelCache.Set(key.ChannelID, ch)
-	channelKeyCache.Set(key.ID, key)
 	channelKeyCacheNeedUpdateLock.Lock()
+	defer channelKeyCacheNeedUpdateLock.Unlock()
+	current, ok := channelKeyCache.Get(key.ID)
+	if !ok {
+		return fmt.Errorf("channel key not found")
+	}
+	current.StatusCode = key.StatusCode
+	current.LastUseTimeStamp = key.LastUseTimeStamp
+	current.TotalCost += costDelta
+	channelKeyCache.Set(key.ID, current)
 	channelKeyCacheNeedUpdate[key.ID] = struct{}{}
-	channelKeyCacheNeedUpdateLock.Unlock()
 	return nil
 }
+
 func ChannelBaseUrlUpdate(channelID int, baseUrl []model.BaseUrl) error {
 	ch, ok := channelCache.Get(channelID)
 	if !ok {
@@ -103,6 +96,11 @@ func ChannelKeySaveDB(ctx context.Context) error {
 			continue
 		}
 		if err := dbConn.Save(&k).Error; err != nil {
+			channelKeyCacheNeedUpdateLock.Lock()
+			for _, keyID := range keyIDs {
+				channelKeyCacheNeedUpdate[keyID] = struct{}{}
+			}
+			channelKeyCacheNeedUpdateLock.Unlock()
 			return err
 		}
 	}
@@ -315,11 +313,14 @@ func ChannelDel(id int, ctx context.Context) error {
 
 	// 删除缓存
 	channelCache.Del(id)
+	channelKeyCacheNeedUpdateLock.Lock()
 	for _, k := range ch.Keys {
 		if k.ID != 0 {
 			channelKeyCache.Del(k.ID)
+			delete(channelKeyCacheNeedUpdate, k.ID)
 		}
 	}
+	channelKeyCacheNeedUpdateLock.Unlock()
 	StatsChannelDel(id)
 
 	// 刷新受影响的分组缓存
@@ -355,6 +356,12 @@ func ChannelGet(id int, ctx context.Context) (*model.Channel, error) {
 	channel, ok := channelCache.Get(id)
 	if !ok {
 		return nil, fmt.Errorf("channel not found")
+	}
+	channel.Keys = slices.Clone(channel.Keys)
+	for i, key := range channel.Keys {
+		if current, ok := channelKeyCache.Get(key.ID); ok {
+			channel.Keys[i] = current
+		}
 	}
 	return &channel, nil
 }
@@ -394,13 +401,6 @@ func channelRefreshCache(ctx context.Context) error {
 }
 
 func channelRefreshCacheByID(id int, ctx context.Context) error {
-	if old, ok := channelCache.Get(id); ok {
-		for _, k := range old.Keys {
-			if k.ID != 0 {
-				channelKeyCache.Del(k.ID)
-			}
-		}
-	}
 	var channel model.Channel
 	if err := db.GetDB().WithContext(ctx).
 		Preload("Keys").
@@ -408,11 +408,27 @@ func channelRefreshCacheByID(id int, ctx context.Context) error {
 		First(&channel, id).Error; err != nil {
 		return err
 	}
-	channelCache.Set(channel.ID, channel)
-	for _, k := range channel.Keys {
-		if k.ID != 0 {
-			channelKeyCache.Set(k.ID, k)
+	channelKeyCacheNeedUpdateLock.Lock()
+	if old, ok := channelCache.Get(id); ok {
+		for _, key := range old.Keys {
+			if !slices.ContainsFunc(channel.Keys, func(current model.ChannelKey) bool {
+				return current.ID == key.ID
+			}) {
+				channelKeyCache.Del(key.ID)
+				delete(channelKeyCacheNeedUpdate, key.ID)
+			}
 		}
 	}
+	for i, key := range channel.Keys {
+		if current, ok := channelKeyCache.Get(key.ID); ok {
+			key.StatusCode = current.StatusCode
+			key.LastUseTimeStamp = current.LastUseTimeStamp
+			key.TotalCost = current.TotalCost
+			channel.Keys[i] = key
+		}
+		channelKeyCache.Set(key.ID, channel.Keys[i])
+	}
+	channelKeyCacheNeedUpdateLock.Unlock()
+	channelCache.Set(channel.ID, channel)
 	return nil
 }
