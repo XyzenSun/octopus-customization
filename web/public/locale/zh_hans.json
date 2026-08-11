@@ -436,7 +436,7 @@
             "removeHeader": "删除 Header",
             "paramOverride": "参数覆盖",
             "paramOverrideInvalid": "参数覆盖不是合法的 JSON 对象",
-            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数",
+            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数；值为 null 表示删除该参数，如 {\"temperature\": null}",
             "saving": "保存中..."
         },
         "mode": {
@@ -571,7 +571,7 @@
             "channelProxy": "渠道代理",
             "channelProxyPlaceholder": "可选：仅对该渠道生效（覆盖全局代理）",
             "paramOverride": "参数覆盖",
-            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数",
+            "paramOverridePlaceholder": "可选：JSON 字符串，用于覆盖请求参数；值为 null 表示删除该参数，如 {\"temperature\": null}",
             "model": "模型",
             "enabled": "启用",
             "proxy": "使用代理",

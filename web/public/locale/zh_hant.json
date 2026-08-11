@@ -436,7 +436,7 @@
             "removeHeader": "刪除 Header",
             "paramOverride": "參數覆蓋",
             "paramOverrideInvalid": "參數覆蓋不是合法的 JSON 物件",
-            "paramOverridePlaceholder": "可選：JSON 字串，用於覆蓋請求參數",
+            "paramOverridePlaceholder": "可選：JSON 字串，用於覆蓋請求參數；值為 null 表示刪除該參數，如 {\"temperature\": null}",
             "saving": "儲存中..."
         },
         "mode": {
@@ -571,7 +571,7 @@
             "channelProxy": "供應源代理",
             "channelProxyPlaceholder": "可選：僅對該供應源生效（覆蓋全域代理）",
             "paramOverride": "參數覆蓋",
-            "paramOverridePlaceholder": "可選：JSON 字串，用於覆蓋請求參數",
+            "paramOverridePlaceholder": "可選：JSON 字串，用於覆蓋請求參數；值為 null 表示刪除該參數，如 {\"temperature\": null}",
             "model": "模型",
             "enabled": "啟用",
             "proxy": "使用代理",
