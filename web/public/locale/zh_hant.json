@@ -193,9 +193,10 @@
         },
         "circuitBreaker": {
             "title": "熔斷器配置",
+            "channelSection": "渠道級熔斷器",
             "enabled": {
-                "label": "啟用熔斷器",
-                "hint": "關閉後所有通道不再進行熔斷檢查"
+                "label": "啟用渠道級熔斷",
+                "hint": "按 渠道+Key+模型 維度統計連續失敗；關閉後不再進行渠道級熔斷檢查"
             },
             "threshold": {
                 "label": "熔斷觸發閾值（連續失敗次數）",
@@ -208,6 +209,11 @@
             "maxCooldown": {
                 "label": "最大冷卻時間（秒）",
                 "placeholder": "請輸入最大冷卻時間"
+            },
+            "keySection": "Key 級熔斷器",
+            "keyEnabled": {
+                "label": "啟用 Key 級熔斷",
+                "hint": "上游返回 401/403 時冷卻該 Key 五分鐘，返回 429/503 時冷卻一分鐘；關閉後選 Key 不再跳過冷卻中的 Key"
             },
             "hint": "當渠道連續失敗達到閾值後觸發熔斷，冷卻時間按指數退避增長，上限為最大冷卻時間",
             "status": {

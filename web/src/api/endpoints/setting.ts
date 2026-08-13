@@ -27,6 +27,7 @@ export const SettingKey = {
     CircuitBreakerCooldown: 'circuit_breaker_cooldown',
     CircuitBreakerMaxCooldown: 'circuit_breaker_max_cooldown',
     CircuitBreakerEnabled: 'circuit_breaker_enabled',
+    KeyCircuitBreakerEnabled: 'key_circuit_breaker_enabled',
     PassthroughEnabled: 'passthrough_enabled',
 } as const;
 

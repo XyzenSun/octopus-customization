@@ -21,11 +21,13 @@ export function SettingCircuitBreaker() {
     const [threshold, setThreshold] = useState('');
     const [cooldown, setCooldown] = useState('');
     const [maxCooldown, setMaxCooldown] = useState('');
+    const [keyEnabled, setKeyEnabled] = useState(true);
 
     const initialEnabled = useRef(true);
     const initialThreshold = useRef('');
     const initialCooldown = useRef('');
     const initialMaxCooldown = useRef('');
+    const initialKeyEnabled = useRef(true);
 
     useEffect(() => {
         if (settings) {
@@ -33,6 +35,7 @@ export function SettingCircuitBreaker() {
             const th = settings.find(s => s.key === SettingKey.CircuitBreakerThreshold);
             const cd = settings.find(s => s.key === SettingKey.CircuitBreakerCooldown);
             const mcd = settings.find(s => s.key === SettingKey.CircuitBreakerMaxCooldown);
+            const ken = settings.find(s => s.key === SettingKey.KeyCircuitBreakerEnabled);
             if (en) {
                 const v = en.value === 'true';
                 queueMicrotask(() => setEnabled(v));
@@ -49,6 +52,11 @@ export function SettingCircuitBreaker() {
             if (mcd) {
                 queueMicrotask(() => setMaxCooldown(mcd.value));
                 initialMaxCooldown.current = mcd.value;
+            }
+            if (ken) {
+                const v = ken.value === 'true';
+                queueMicrotask(() => setKeyEnabled(v));
+                initialKeyEnabled.current = v;
             }
         }
     }, [settings]);
@@ -67,6 +75,8 @@ export function SettingCircuitBreaker() {
                     initialCooldown.current = value;
                 } else if (key === SettingKey.CircuitBreakerMaxCooldown) {
                     initialMaxCooldown.current = value;
+                } else if (key === SettingKey.KeyCircuitBreakerEnabled) {
+                    initialKeyEnabled.current = value === 'true';
                 }
             }
         });
@@ -76,6 +86,12 @@ export function SettingCircuitBreaker() {
         const value = checked ? 'true' : 'false';
         setEnabled(checked);
         handleSave(SettingKey.CircuitBreakerEnabled, value, initialEnabled.current ? 'true' : 'false');
+    };
+
+    const handleToggleKeyEnabled = (checked: boolean) => {
+        const value = checked ? 'true' : 'false';
+        setKeyEnabled(checked);
+        handleSave(SettingKey.KeyCircuitBreakerEnabled, value, initialKeyEnabled.current ? 'true' : 'false');
     };
 
     return (
@@ -95,79 +111,114 @@ export function SettingCircuitBreaker() {
                 </TooltipProvider>
             </h2>
 
-            {/* 启用熔断器开关 */}
-            <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium">{t('circuitBreaker.enabled.label')}</span>
-                    <TooltipProvider>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <HelpCircle className="size-4 text-muted-foreground cursor-help" />
-                            </TooltipTrigger>
-                            <TooltipContent>
-                                {t('circuitBreaker.enabled.hint')}
-                            </TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
+            {/* 渠道级熔断器 */}
+            <div className="space-y-5">
+                <h3 className="text-sm font-semibold text-card-foreground">
+                    {t('circuitBreaker.channelSection')}
+                </h3>
+
+                {/* 启用熔断器开关 */}
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium">{t('circuitBreaker.enabled.label')}</span>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    {t('circuitBreaker.enabled.hint')}
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </div>
+                    <Switch
+                        checked={enabled}
+                        onCheckedChange={handleToggleEnabled}
+                    />
                 </div>
-                <Switch
-                    checked={enabled}
-                    onCheckedChange={handleToggleEnabled}
-                />
+
+                {/* 熔断触发阈值 */}
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Hash className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('circuitBreaker.threshold.label')}</span>
+                    </div>
+                    <Input
+                        type="number"
+                        value={threshold}
+                        disabled={!enabled}
+                        onChange={(e) => setThreshold(e.target.value)}
+                        onBlur={() => handleSave(SettingKey.CircuitBreakerThreshold, threshold, initialThreshold.current)}
+                        placeholder={t('circuitBreaker.threshold.placeholder')}
+                        className="w-48 rounded-xl"
+                    />
+                </div>
+
+                {/* 基础冷却时间 */}
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <Timer className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('circuitBreaker.cooldown.label')}</span>
+                    </div>
+                    <Input
+                        type="number"
+                        value={cooldown}
+                        disabled={!enabled}
+                        onChange={(e) => setCooldown(e.target.value)}
+                        onBlur={() => handleSave(SettingKey.CircuitBreakerCooldown, cooldown, initialCooldown.current)}
+                        placeholder={t('circuitBreaker.cooldown.placeholder')}
+                        className="w-48 rounded-xl"
+                    />
+                </div>
+
+                {/* 最大冷却时间 */}
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <TimerOff className="h-5 w-5 text-muted-foreground" />
+                        <span className="text-sm font-medium">{t('circuitBreaker.maxCooldown.label')}</span>
+                    </div>
+                    <Input
+                        type="number"
+                        value={maxCooldown}
+                        disabled={!enabled}
+                        onChange={(e) => setMaxCooldown(e.target.value)}
+                        onBlur={() => handleSave(SettingKey.CircuitBreakerMaxCooldown, maxCooldown, initialMaxCooldown.current)}
+                        placeholder={t('circuitBreaker.maxCooldown.placeholder')}
+                        className="w-48 rounded-xl"
+                    />
+                </div>
+
+                {/* 状态列表只反映渠道级熔断，因此归属在本分组内 */}
+                <CircuitStatusSection />
             </div>
 
-            {/* 熔断触发阈值 */}
-            <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                    <Hash className="h-5 w-5 text-muted-foreground" />
-                    <span className="text-sm font-medium">{t('circuitBreaker.threshold.label')}</span>
-                </div>
-                <Input
-                    type="number"
-                    value={threshold}
-                    disabled={!enabled}
-                    onChange={(e) => setThreshold(e.target.value)}
-                    onBlur={() => handleSave(SettingKey.CircuitBreakerThreshold, threshold, initialThreshold.current)}
-                    placeholder={t('circuitBreaker.threshold.placeholder')}
-                    className="w-48 rounded-xl"
-                />
-            </div>
+            {/* Key 级熔断器 */}
+            <div className="space-y-5 pt-1">
+                <h3 className="text-sm font-semibold text-card-foreground">
+                    {t('circuitBreaker.keySection')}
+                </h3>
 
-            {/* 基础冷却时间 */}
-            <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                    <Timer className="h-5 w-5 text-muted-foreground" />
-                    <span className="text-sm font-medium">{t('circuitBreaker.cooldown.label')}</span>
+                <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                        <span className="text-sm font-medium">{t('circuitBreaker.keyEnabled.label')}</span>
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <HelpCircle className="size-4 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    {t('circuitBreaker.keyEnabled.hint')}
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </div>
+                    <Switch
+                        checked={keyEnabled}
+                        onCheckedChange={handleToggleKeyEnabled}
+                    />
                 </div>
-                <Input
-                    type="number"
-                    value={cooldown}
-                    disabled={!enabled}
-                    onChange={(e) => setCooldown(e.target.value)}
-                    onBlur={() => handleSave(SettingKey.CircuitBreakerCooldown, cooldown, initialCooldown.current)}
-                    placeholder={t('circuitBreaker.cooldown.placeholder')}
-                    className="w-48 rounded-xl"
-                />
             </div>
-
-            {/* 最大冷却时间 */}
-            <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                    <TimerOff className="h-5 w-5 text-muted-foreground" />
-                    <span className="text-sm font-medium">{t('circuitBreaker.maxCooldown.label')}</span>
-                </div>
-                <Input
-                    type="number"
-                    value={maxCooldown}
-                    disabled={!enabled}
-                    onChange={(e) => setMaxCooldown(e.target.value)}
-                    onBlur={() => handleSave(SettingKey.CircuitBreakerMaxCooldown, maxCooldown, initialMaxCooldown.current)}
-                    placeholder={t('circuitBreaker.maxCooldown.placeholder')}
-                    className="w-48 rounded-xl"
-                />
-            </div>
-
-            <CircuitStatusSection />
         </div>
     );
 }
