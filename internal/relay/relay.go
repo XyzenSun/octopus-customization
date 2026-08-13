@@ -190,7 +190,7 @@ func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
 		return nil, nil
 	}
 
-	usedKey := channel.GetChannelKey()
+	usedKey := channel.GetChannelKey(balancer.IsKeyCircuitBreakerEnabled())
 	if usedKey.ChannelKey == "" {
 		r.iter.Skip(channel.ID, 0, channel.Name, "no available key")
 		return nil, nil
