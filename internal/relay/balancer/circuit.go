@@ -59,6 +59,17 @@ func IsChannelCircuitBreakerEnabled() bool {
 	return v
 }
 
+// IsKeyCircuitBreakerEnabled 读取 Key 级熔断器开关
+// 关闭后 Channel.GetChannelKey 不再跳过因上游 401/403/429/503 而冷却中的 Key
+// err 或未设置时默认返回 true（向后兼容）
+func IsKeyCircuitBreakerEnabled() bool {
+	v, err := op.SettingGetBool(model.SettingKeyKeyCircuitBreakerEnabled)
+	if err != nil {
+		return true
+	}
+	return v
+}
+
 // getThreshold 获取熔断阈值配置
 func getThreshold() int64 {
 	v, err := op.SettingGetInt(model.SettingKeyCircuitBreakerThreshold)
