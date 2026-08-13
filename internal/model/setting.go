@@ -24,6 +24,7 @@ const (
 	SettingKeyCircuitBreakerCooldown             SettingKey = "circuit_breaker_cooldown"                 // 渠道级熔断基础冷却时间（秒）
 	SettingKeyCircuitBreakerMaxCooldown          SettingKey = "circuit_breaker_max_cooldown"             // 渠道级熔断最大冷却时间（秒），指数退避上限
 	SettingKeyCircuitBreakerEnabled              SettingKey = "circuit_breaker_enabled"                  // 渠道级熔断器开关（按 渠道+Key+模型 统计连续失败）
+	SettingKeyKeyCircuitBreakerEnabled           SettingKey = "key_circuit_breaker_enabled"              // Key 级熔断器开关（上游返回 401/403/429/503 时冷却该 Key）
 	SettingKeyPassthroughEnabled                 SettingKey = "passthrough_enabled"                      // 协议直通全局开关
 	SettingKeyTwoFactorEnabled                   SettingKey = "two_factor_enabled"                       // 两步验证(TOTP)开关，密钥另存于 users 表
 )
@@ -58,6 +59,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyCircuitBreakerCooldown, Value: "60"},             // 默认基础冷却60秒
 		{Key: SettingKeyCircuitBreakerMaxCooldown, Value: "600"},         // 默认最大冷却600秒（10分钟）
 		{Key: SettingKeyCircuitBreakerEnabled, Value: "true"},            // 默认启用渠道级熔断器
+		{Key: SettingKeyKeyCircuitBreakerEnabled, Value: "true"},         // 默认启用 Key 级熔断器（与历史行为一致）
 		{Key: SettingKeyPassthroughEnabled, Value: "false"},              // Beta 功能默认关闭协议直通
 		{Key: SettingKeyTwoFactorEnabled, Value: "false"},                // 两步验证默认关闭
 	}
@@ -96,7 +98,7 @@ func (s *Setting) Validate() error {
 			return fmt.Errorf("relay log keep enabled must be true or false")
 		}
 		return nil
-	case SettingKeyCircuitBreakerEnabled:
+	case SettingKeyCircuitBreakerEnabled, SettingKeyKeyCircuitBreakerEnabled:
 		if s.Value != "true" && s.Value != "false" {
 			return fmt.Errorf("circuit breaker enabled must be true or false")
 		}
