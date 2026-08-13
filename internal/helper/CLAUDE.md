@@ -14,5 +14,6 @@
 ## 关键约束
 
 - **不放业务逻辑**：本目录是工具集，所有函数应是无状态、可独立测试的纯函数式辅助；带状态/缓存的写到 `internal/op`。
-- **依赖方向**：可依赖 `model`/`utils/log`/`client`，**不要**依赖 `op`/`server`/`task`（避免循环依赖）。
+- **依赖方向**：可依赖 `model`/`op`/`client`/`price`/`relay/balancer`/`utils/*`；**禁止**依赖 `server`/`task`/`relay`（父包）——这三者都已（间接）依赖 helper，反向引用会成环。
+  - `relay/balancer` 是独立子包且不依赖 helper，引用它不构成环：`fetch.go` 借 `balancer.IsKeyCircuitBreakerEnabled()` 读 Key 级熔断开关，与 relay 热路径保持同一语义。
 - **新工具优先合并**：新增辅助函数前先看现有四个文件能否归类，避免无序膨胀（如新加一个 channel 相关辅助应进 `channel.go`）。
