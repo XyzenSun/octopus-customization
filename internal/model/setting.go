@@ -20,10 +20,10 @@ const (
 	SettingKeyRelayLogMaxContentSizeMB           SettingKey = "relay_log_max_content_size_mb"            // 单条日志请求与响应正文合计上限（MiB）
 	SettingKeyRelayLogMemoryLogMaxDimidiateTimes SettingKey = "relay_log_memory_log_max_dimidiate_times" // 折半 GC 触发次数，-1 关闭
 	SettingKeyCORSAllowOrigins                   SettingKey = "cors_allow_origins"                       // 跨域白名单(逗号分隔, 如 "example.com,example2.com"). 为空不允许跨域, "*"允许所有
-	SettingKeyCircuitBreakerThreshold            SettingKey = "circuit_breaker_threshold"                // 熔断触发阈值（连续失败次数）
-	SettingKeyCircuitBreakerCooldown             SettingKey = "circuit_breaker_cooldown"                 // 熔断基础冷却时间（秒）
-	SettingKeyCircuitBreakerMaxCooldown          SettingKey = "circuit_breaker_max_cooldown"             // 熔断最大冷却时间（秒），指数退避上限
-	SettingKeyCircuitBreakerEnabled              SettingKey = "circuit_breaker_enabled"                  // 熔断器全局开关
+	SettingKeyCircuitBreakerThreshold            SettingKey = "circuit_breaker_threshold"                // 渠道级熔断触发阈值（连续失败次数）
+	SettingKeyCircuitBreakerCooldown             SettingKey = "circuit_breaker_cooldown"                 // 渠道级熔断基础冷却时间（秒）
+	SettingKeyCircuitBreakerMaxCooldown          SettingKey = "circuit_breaker_max_cooldown"             // 渠道级熔断最大冷却时间（秒），指数退避上限
+	SettingKeyCircuitBreakerEnabled              SettingKey = "circuit_breaker_enabled"                  // 渠道级熔断器开关（按 渠道+Key+模型 统计连续失败）
 	SettingKeyPassthroughEnabled                 SettingKey = "passthrough_enabled"                      // 协议直通全局开关
 	SettingKeyTwoFactorEnabled                   SettingKey = "two_factor_enabled"                       // 两步验证(TOTP)开关，密钥另存于 users 表
 )
@@ -57,7 +57,7 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyCircuitBreakerThreshold, Value: "5"},             // 默认连续失败5次触发熔断
 		{Key: SettingKeyCircuitBreakerCooldown, Value: "60"},             // 默认基础冷却60秒
 		{Key: SettingKeyCircuitBreakerMaxCooldown, Value: "600"},         // 默认最大冷却600秒（10分钟）
-		{Key: SettingKeyCircuitBreakerEnabled, Value: "true"},            // 默认启用熔断器
+		{Key: SettingKeyCircuitBreakerEnabled, Value: "true"},            // 默认启用渠道级熔断器
 		{Key: SettingKeyPassthroughEnabled, Value: "false"},              // Beta 功能默认关闭协议直通
 		{Key: SettingKeyTwoFactorEnabled, Value: "false"},                // 两步验证默认关闭
 	}
