@@ -2,6 +2,7 @@ package helper
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -14,6 +15,9 @@ import (
 )
 
 func ChannelHttpClient(channel *model.Channel) (*http.Client, error) {
+	if channel == nil {
+		return nil, errors.New("channel is nil")
+	}
 	if !channel.Proxy {
 		return client.GetHTTPClientSystemProxy(false)
 	}
