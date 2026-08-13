@@ -193,9 +193,10 @@
         },
         "circuitBreaker": {
             "title": "Circuit Breaker",
+            "channelSection": "Channel-Level Circuit Breaker",
             "enabled": {
-                "label": "Enable Circuit Breaker",
-                "hint": "When disabled, no channel will be checked for circuit breaking"
+                "label": "Enable Channel-Level Breaker",
+                "hint": "Counts consecutive failures per channel + key + model; when disabled, no channel-level circuit check is performed"
             },
             "threshold": {
                 "label": "Failure Threshold (consecutive failures)",
@@ -208,6 +209,11 @@
             "maxCooldown": {
                 "label": "Max Cooldown (seconds)",
                 "placeholder": "Enter max cooldown in seconds"
+            },
+            "keySection": "Key-Level Circuit Breaker",
+            "keyEnabled": {
+                "label": "Enable Key-Level Breaker",
+                "hint": "Cools down a key for 5 minutes on upstream 401/403 and 1 minute on 429/503; when disabled, cooling keys are no longer skipped during key selection"
             },
             "hint": "When a channel fails consecutively up to the threshold, circuit breaker trips. Cooldown grows exponentially up to the max cooldown",
             "status": {
