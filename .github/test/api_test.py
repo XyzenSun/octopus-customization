@@ -16,7 +16,7 @@ Octopus 管理面板 API 端到端测试。
     - 不调用 /api/v1/channel/fetch-model, /api/v1/channel/sync (依赖外网)
     - 不调用 /api/v1/model/update-price (触发外网拉取)
     - 不调用 POST /api/v1/update (会触发自更新, 高风险)
-    - SSE /api/v1/log/stream 仅测 stream-token, 不实际订阅 (避免阻塞)
+    - SSE /api/v1/log/stream 仅验证缺少管理员 Cookie 时拒绝连接
     - /api/v1/setting/import 仅测 export, 不跑 import (写入风险)
 """
 
@@ -29,6 +29,7 @@ import sys
 import time
 import traceback
 import uuid
+from http.cookiejar import CookieJar
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib import error as urlerror
 from urllib import parse as urlparse
@@ -126,8 +127,17 @@ class Client:
     def __init__(self, base: str, timeout: float = 30.0) -> None:
         self.base = base.rstrip("/")
         self.timeout = timeout
-        self.jwt_token: Optional[str] = None
+        parsed_base = urlparse.urlparse(self.base)
+        self.origin = f"{parsed_base.scheme}://{parsed_base.netloc}"
+        self.cookie_jar = CookieJar()
+        self.opener = urlrequest.build_opener(urlrequest.HTTPCookieProcessor(self.cookie_jar))
         self.api_key: Optional[str] = None
+
+    def clear_admin_session(self) -> None:
+        self.cookie_jar.clear()
+
+    def has_admin_session(self) -> bool:
+        return any(cookie.name == "octopus_admin_session" for cookie in self.cookie_jar)
 
     # --------- 内部方法 ---------
 
@@ -152,8 +162,8 @@ class Client:
         headers: Dict[str, str] = {"Accept": "application/json"}
         if json_body:
             headers["Content-Type"] = "application/json"
-        if auth == "jwt" and self.jwt_token:
-            headers["Authorization"] = f"Bearer {self.jwt_token}"
+        if auth == "admin":
+            headers["Origin"] = self.origin
         elif auth == "apikey" and self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         if extra:
@@ -171,9 +181,9 @@ class Client:
         json_body: Optional[Any] = None,
         query: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        auth: str = "jwt",
+        auth: str = "admin",
     ) -> Response:
-        """发送 HTTP 请求, auth 取值: 'jwt' / 'apikey' / 'none'。"""
+        """发送 HTTP 请求, auth 取值: 'admin' / 'apikey' / 'none'。"""
         url = self._build_url(path, query)
         body_bytes: Optional[bytes] = None
         if json_body is not None:
@@ -185,7 +195,7 @@ class Client:
             url=url, data=body_bytes, method=method.upper(), headers=all_headers
         )
         try:
-            with urlrequest.urlopen(req, timeout=self.timeout) as r:
+            with self.opener.open(req, timeout=self.timeout) as r:
                 raw = r.read()
                 rh = {k.lower(): v for k, v in r.getheaders()}
                 return Response(r.status, rh, raw)
@@ -314,45 +324,34 @@ def make_user_cases(ctx: Context, username: str, password: str) -> List[Tuple[st
     c = ctx.client
 
     def case_login():
-        # 登录, 拿到 JWT
         resp = c.request(
             "POST", "/api/v1/user/login",
-            json_body={"username": username, "password": password, "expire": 1},
-            auth="none",
+            json_body={"username": username, "password": password},
         )
         assert_status(resp, 200)
         assert_truthy(isinstance(resp.json, dict), "响应应为 JSON 对象")
         assert_field_exists(resp.json, "code", "message", "data")
-        data = resp.json["data"]
-        assert_field_exists(data, "token", "expire_at")
-        assert_truthy(data["token"], "token 不能为空")
-        c.jwt_token = data["token"]
+        assert_eq(resp.json["data"].get("kind"), "admin", "登录响应身份应为 admin")
+        assert_truthy(c.has_admin_session(), "登录后应保存管理员 Cookie")
         ctx.original_username = username
         ctx.original_password = password
 
     def case_status_unauth():
-        # 未鉴权访问 /status: Auth() 在 Authorization 缺失时返回 400 + ErrBadRequest
-        c.jwt_token = None
-        resp = c.request("GET", "/api/v1/user/status", auth="none")
-        if resp.status not in (400, 401):
-            raise AssertionFail(
-                f"未鉴权访问期望 400/401, 实际 {resp.status}; body={resp.text[:200]}"
-            )
+        c.clear_admin_session()
+        resp = c.request("GET", "/api/v1/user/status")
+        assert_status(resp, 401)
         assert_truthy(isinstance(resp.json, dict), "应返回 JSON 包装")
         assert_field_exists(resp.json, "code", "message")
 
     def case_status_auth():
-        # 重新登录后访问 /status, 期望 200/"ok"
         login_resp = c.request(
             "POST", "/api/v1/user/login",
-            json_body={"username": username, "password": password, "expire": 1},
-            auth="none",
+            json_body={"username": username, "password": password},
         )
         assert_status(login_resp, 200)
-        c.jwt_token = login_resp.json["data"]["token"]
         resp = c.request("GET", "/api/v1/user/status")
         assert_status(resp, 200)
-        assert_eq(resp.json["data"], "ok", "status data 应为 'ok'")
+        assert_eq(resp.json["data"].get("kind"), "admin", "status 身份应为 admin")
 
     def case_change_password():
         # 改密码 -> 用新密码登录 -> 改回原值, 用原值登录验证
@@ -365,11 +364,9 @@ def make_user_cases(ctx: Context, username: str, password: str) -> List[Tuple[st
         # 用新密码登录
         r2 = c.request(
             "POST", "/api/v1/user/login",
-            json_body={"username": username, "password": new_pwd, "expire": 1},
-            auth="none",
+            json_body={"username": username, "password": new_pwd}
         )
         assert_status(r2, 200)
-        c.jwt_token = r2.json["data"]["token"]
         # 改回原值
         r3 = c.request(
             "POST", "/api/v1/user/change-password",
@@ -379,11 +376,9 @@ def make_user_cases(ctx: Context, username: str, password: str) -> List[Tuple[st
         # 用原密码登录验证
         r4 = c.request(
             "POST", "/api/v1/user/login",
-            json_body={"username": username, "password": password, "expire": 1},
-            auth="none",
+            json_body={"username": username, "password": password}
         )
         assert_status(r4, 200)
-        c.jwt_token = r4.json["data"]["token"]
 
     def case_change_username():
         # 改用户名 -> 用新用户名登录 -> 改回原值
@@ -396,11 +391,9 @@ def make_user_cases(ctx: Context, username: str, password: str) -> List[Tuple[st
         # 用新用户名登录
         r2 = c.request(
             "POST", "/api/v1/user/login",
-            json_body={"username": new_user, "password": password, "expire": 1},
-            auth="none",
+            json_body={"username": new_user, "password": password}
         )
         assert_status(r2, 200)
-        c.jwt_token = r2.json["data"]["token"]
         # 改回原值
         r3 = c.request(
             "POST", "/api/v1/user/change-username",
@@ -410,14 +403,12 @@ def make_user_cases(ctx: Context, username: str, password: str) -> List[Tuple[st
         # 用原用户名重登, 刷新 token
         r4 = c.request(
             "POST", "/api/v1/user/login",
-            json_body={"username": username, "password": password, "expire": 1},
-            auth="none",
+            json_body={"username": username, "password": password}
         )
         assert_status(r4, 200)
-        c.jwt_token = r4.json["data"]["token"]
 
     return [
-        ("用户.登录拿到JWT", case_login),
+        ("用户.Cookie登录", case_login),
         ("用户.未鉴权访问status", case_status_unauth),
         ("用户.鉴权后访问status", case_status_auth),
         ("用户.改密码后还原", case_change_password),
@@ -743,12 +734,13 @@ def make_log_cases(ctx: Context) -> List[Tuple[str, Callable[[], None]]]:
         data = resp.json.get("data")
         assert_truthy(data is None or isinstance(data, list), "log/list data 为 list 或 null")
 
-    def case_stream_token():
-        resp = c.request("GET", "/api/v1/log/stream-token")
-        assert_status(resp, 200)
-        data = resp.json["data"]
-        assert_field_exists(data, "token")
-        assert_truthy(data["token"], "stream token 非空")
+    def case_stream_requires_cookie():
+        saved_cookies = list(c.cookie_jar)
+        c.clear_admin_session()
+        resp = c.request("GET", "/api/v1/log/stream")
+        assert_status(resp, 401)
+        for cookie in saved_cookies:
+            c.cookie_jar.set_cookie(cookie)
 
     def case_clear():
         resp = c.request("DELETE", "/api/v1/log/clear")
@@ -756,7 +748,7 @@ def make_log_cases(ctx: Context) -> List[Tuple[str, Callable[[], None]]]:
 
     return [
         ("日志.list分页", case_list),
-        ("日志.stream-token", case_stream_token),
+        ("日志.SSE要求管理员Cookie", case_stream_requires_cookie),
         ("日志.clear", case_clear),
     ]
 
@@ -1037,25 +1029,16 @@ def main() -> int:
     try:
         ok = runner.run()
     finally:
-        # 无论成败, 都尝试清理已创建资源
-        # 清理需要 JWT token, 若 token 失效则尝试重新登录一次
-        if not client.jwt_token:
+        # 无论成败都尝试恢复管理员 Cookie，再清理测试资源。
+        if not client.has_admin_session():
             try:
-                login_resp = client.request(
+                client.request(
                     "POST", "/api/v1/user/login",
                     json_body={
                         "username": args.user,
                         "password": args.password,
-                        "expire": 1,
                     },
-                    auth="none",
                 )
-                if (
-                    login_resp.status == 200
-                    and isinstance(login_resp.json, dict)
-                    and isinstance(login_resp.json.get("data"), dict)
-                ):
-                    client.jwt_token = login_resp.json["data"].get("token")
             except Exception:  # pragma: no cover
                 pass
         ctx.run_cleanups()

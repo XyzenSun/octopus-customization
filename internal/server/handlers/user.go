@@ -16,10 +16,15 @@ import (
 
 func init() {
 	router.NewGroupRouter("/api/v1/user").
+		Use(middleware.AdminSameOrigin()).
 		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/login", http.MethodPost).
 				Handle(login),
+		).
+		AddRoute(
+			router.NewRoute("/logout", http.MethodPost).
+				Handle(logout),
 		)
 	// 登录页需要在未登录状态下展示服务器时间来诊断 TOTP 时间偏差，因此不加鉴权。
 	router.NewGroupRouter("/api/v1/user").
@@ -28,7 +33,7 @@ func init() {
 				Handle(serverTime),
 		)
 	router.NewGroupRouter("/api/v1/user").
-		Use(middleware.Auth()).
+		Use(middleware.AdminAuth()).
 		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/change-password", http.MethodPost).
@@ -76,12 +81,13 @@ func login(c *gin.Context) {
 		resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 		return
 	}
-	token, expire, err := auth.GenerateJWTToken(user.Expire)
+	token, err := auth.GenerateJWTToken()
 	if err != nil {
 		resp.Error(c, http.StatusInternalServerError, resp.ErrInternalServer)
 		return
 	}
-	resp.Success(c, model.UserLoginResponse{Token: token, ExpireAt: expire})
+	auth.SetAdminSessionCookie(c.Writer, token)
+	resp.Success(c, gin.H{"kind": "admin"})
 }
 
 func changePassword(c *gin.Context) {
@@ -111,7 +117,12 @@ func changeUsername(c *gin.Context) {
 }
 
 func status(c *gin.Context) {
-	resp.Success(c, "ok")
+	resp.Success(c, gin.H{"kind": "admin"})
+}
+
+func logout(c *gin.Context) {
+	auth.ClearAdminSessionCookie(c.Writer)
+	resp.Success(c, nil)
 }
 
 // serverTime 固定按东八区展示。TOTP 本身基于 Unix 时间戳、与时区无关，

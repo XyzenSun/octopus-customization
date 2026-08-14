@@ -16,7 +16,7 @@ import (
 
 func init() {
 	router.NewGroupRouter("/api/v1/model").
-		Use(middleware.Auth()).
+		Use(middleware.AdminAuth()).
 		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/list", http.MethodGet).

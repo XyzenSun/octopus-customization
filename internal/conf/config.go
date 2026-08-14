@@ -24,9 +24,11 @@ type Database struct {
 }
 
 type Config struct {
-	Server   Server   `mapstructure:"server"`
-	Log      Log      `mapstructure:"log"`
-	Database Database `mapstructure:"database"`
+	Server            Server   `mapstructure:"server"`
+	Log               Log      `mapstructure:"log"`
+	Database          Database `mapstructure:"database"`
+	AdminCookieSecure bool     `mapstructure:"admin_cookie_secure"`
+	AdminOrigins      string   `mapstructure:"admin_origins"`
 }
 
 var AppConfig Config
@@ -43,6 +45,12 @@ func Load(path string) error {
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix(APP_NAME)
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	if err := viper.BindEnv("admin_cookie_secure", "OCTOPUS_ADMIN_COOKIE_SECURE"); err != nil {
+		return fmt.Errorf("unable to bind admin cookie security setting: %w", err)
+	}
+	if err := viper.BindEnv("admin_origins", "OCTOPUS_ADMIN_ORIGINS"); err != nil {
+		return fmt.Errorf("unable to bind admin origin setting: %w", err)
+	}
 
 	setDefaults()
 
@@ -74,4 +82,8 @@ func setDefaults() {
 	viper.SetDefault("database.type", "sqlite")
 	viper.SetDefault("database.path", "data/data.db")
 	viper.SetDefault("log.level", "info")
+	viper.SetDefault("admin_cookie_secure", false)
+	if IsDebug() {
+		viper.SetDefault("admin_origins", "http://localhost:3000,http://127.0.0.1:3000")
+	}
 }

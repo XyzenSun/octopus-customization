@@ -1,6 +1,6 @@
 import type { InfiniteData } from '@tanstack/react-query';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient, API_BASE_URL } from '../client';
+import { apiClient } from '../client';
 import { logger } from '@/lib/logger';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -155,52 +155,45 @@ export function useLogs(options: { pageSize?: number } = {}) {
     useEffect(() => {
         let cancelled = false;
 
-        const connect = async () => {
-            try {
-                const { token } = await apiClient.get<{ token: string }>('/api/v1/log/stream-token');
-                if (cancelled) return;
+        const connect = () => {
+            if (cancelled) return;
 
-                const eventSource = new EventSource(`${API_BASE_URL}/api/v1/log/stream?token=${token}`);
-                eventSourceRef.current = eventSource;
+            const eventSource = new EventSource('/api/v1/log/stream');
+            eventSourceRef.current = eventSource;
 
-                eventSource.onopen = () => {
-                    setIsConnected(true);
-                    setError(null);
-                };
+            eventSource.onopen = () => {
+                setIsConnected(true);
+                setError(null);
+            };
 
-                eventSource.onmessage = (event) => {
-                    try {
-                        const log: RelayLog = JSON.parse(event.data);
-                        queryClient.setQueryData(
-                            logsInfiniteQueryKey(pageSize),
-                            (old: InfiniteData<RelayLog[], number> | undefined) => {
-                                if (!old) {
-                                    return { pages: [[log]], pageParams: [1] };
-                                }
-
-                                const exists = old.pages.some((p) => p?.some((x) => x.id === log.id));
-                                if (exists) return old;
-
-                                const firstPage = old.pages[0] ?? [];
-                                return { ...old, pages: [[log, ...firstPage], ...old.pages.slice(1)] };
+            eventSource.onmessage = (event) => {
+                try {
+                    const log: RelayLog = JSON.parse(event.data);
+                    queryClient.setQueryData(
+                        logsInfiniteQueryKey(pageSize),
+                        (old: InfiniteData<RelayLog[], number> | undefined) => {
+                            if (!old) {
+                                return { pages: [[log]], pageParams: [1] };
                             }
-                        );
-                    } catch (e) {
-                        logger.error('解析日志数据失败:', e);
-                    }
-                };
 
-                eventSource.onerror = () => {
-                    setIsConnected(false);
-                    setError(new Error('SSE 连接断开'));
-                    eventSource.close();
-                    eventSourceRef.current = null;
-                };
-            } catch (e) {
-                if (cancelled) return;
-                setError(e instanceof Error ? e : new Error('获取 stream token 失败'));
-                logger.error('获取 stream token 失败:', e);
-            }
+                            const exists = old.pages.some((page) => page?.some((item) => item.id === log.id));
+                            if (exists) return old;
+
+                            const firstPage = old.pages[0] ?? [];
+                            return { ...old, pages: [[log, ...firstPage], ...old.pages.slice(1)] };
+                        }
+                    );
+                } catch (error) {
+                    logger.error('解析日志数据失败:', error);
+                }
+            };
+
+            eventSource.onerror = () => {
+                setIsConnected(false);
+                setError(new Error('SSE 连接断开'));
+                eventSource.close();
+                eventSourceRef.current = null;
+            };
         };
 
         connect();

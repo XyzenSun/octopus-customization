@@ -19,7 +19,7 @@ import (
 
 func init() {
 	router.NewGroupRouter("/api/v1/setting").
-		Use(middleware.Auth()).
+		Use(middleware.AdminAuth()).
 		AddRoute(
 			router.NewRoute("/list", http.MethodGet).
 				Handle(getSettingList),

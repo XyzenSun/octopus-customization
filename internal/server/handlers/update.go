@@ -13,7 +13,7 @@ import (
 
 func init() {
 	router.NewGroupRouter("/api/v1/update").
-		Use(middleware.Auth()).
+		Use(middleware.AdminAuth()).
 		AddRoute(
 			router.NewRoute("", http.MethodGet).
 				Handle(latest),

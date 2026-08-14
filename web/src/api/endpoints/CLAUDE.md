@@ -12,7 +12,7 @@
 - `user.ts` — 登录、改密、用户信息
 - `setting.ts` — 设置项读写
 - `model.ts` — 可用模型列表
-- `log.ts` — 日志列表/清空 + SSE token + EventSource 连接
+- `log.ts` — 日志列表/清空 + Cookie 鉴权 EventSource 连接
 - `stats.ts` — 多维度统计查询
 - `update.ts` — 版本更新检查
 
@@ -20,5 +20,5 @@
 
 - **统一通过 client wrapper**：每个函数内部调 `client.get/post/put/delete`，不直接 `fetch`。
 - **命名一致**：导出函数采用 `xxxList / xxxGet / xxxCreate / xxxUpdate / xxxDelete` 模式；类型导出名 `XxxItem / XxxCreateReq / XxxUpdateReq`。
-- **SSE 特殊处理**：`log.ts` 的 stream 端点需要"先 GET token，再用 query 参数构造 EventSource"两步；浏览器 `EventSource` 不支持自定义 header，所以走这种模式（对应后端 `internal/server/handlers/log.go`）。
+- **SSE 鉴权**：`log.ts` 直接连接同源 stream 端点，浏览器自动携带管理员 HttpOnly Cookie。
 - **类型对齐后端**：新增/修改字段后，去 `internal/model/<resource>.go` 核对 JSON tag，避免运行时字段不存在。

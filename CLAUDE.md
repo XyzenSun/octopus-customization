@@ -26,7 +26,7 @@ octopus-customization/
 │   │   ├── relay.go         # 请求转发主流程 + SSE 流式处理
 │   │   └── metrics.go       # 请求统计采集
 │   ├── server/              # Gin HTTP 服务
-│   │   ├── auth/            # JWT 认证
+│   │   ├── auth/            # 管理员 JWT Cookie 认证
 │   │   ├── handlers/        # 各资源 handler（channel、group、apikey、log、setting）
 │   │   ├── middleware/       # Auth/APIKeyAuth/CORS/Logger/Static/RequireJSON
 │   │   ├── resp/            # 统一响应格式
@@ -70,7 +70,7 @@ go run main.go start --config path/to/config  # 指定配置文件
 
 # 前端开发
 cd web && pnpm install                        # 安装前端依赖
-cd web && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev  # 前端 dev server
+cd web && OCTOPUS_DEV_PROXY_TARGET="http://127.0.0.1:8080" pnpm run dev  # 前端 dev server
 cd web && pnpm run build && cd .. && mv web/out static/                  # 构建前端并移到 static/
 
 # 生产构建（使用 scripts/build.sh 包装器）
@@ -95,7 +95,7 @@ handler → op（缓存+CRUD）→ model（GORM 模型）→ db（数据库）
 ### 前端结构
 
 - 状态管理：Zustand（`stores/setting.ts`）
-- API 客户端：`api/client.ts`（统一 fetch wrapper，自动注入 JWT token）
+- API 客户端：`api/client.ts`（统一 fetch wrapper，管理员 Cookie / API Key Bearer 分流）
 - 路由：Next.js App Router + `route/config.tsx` 声明式 lazy load
 - i18n：next-intl，翻译文件在 `public/locale/`
 - 组件按功能域分模块：`components/modules/{channel,group,log,setting,...}/`
@@ -120,24 +120,14 @@ handler → op（缓存+CRUD）→ model（GORM 模型）→ db（数据库）
 
 ### 远程开发环境配置
 
-当在远程服务器上开发时，前端需要访问远程后端 API：
+远程开发也必须保持浏览器与管理 API 同源，由 Next dev server 代理到远程后端：
 
 ```bash
-# 前端开发服务器指向远程后端
 cd web
-NEXT_PUBLIC_API_BASE_URL="http://<服务器IP>:8080" pnpm run dev
+OCTOPUS_DEV_PROXY_TARGET="http://<服务器IP>:8080" pnpm run dev
 ```
 
-后端 CORS 配置（开发环境）：
-```bash
-# 通过 API 设置 CORS 允许所有来源（仅开发环境）
-curl -X POST "http://127.0.0.1:8080/api/v1/setting/set" \
-     -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" \
-     -d '{"key":"cors_allow_origins","value":"*"}'
-```
-
-**生产环境** 必须设置具体域名：`"example.com,app.example.com"`
+`OCTOPUS_DEV_PROXY_TARGET` 仅在 `next dev` 生效，不进入生产静态导出。管理员认证使用固定 7 天 HttpOnly Cookie；管理路由要求同源，API Key 调用继续使用 Bearer。
 
 ### 配置项删除检查清单
 

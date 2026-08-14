@@ -75,7 +75,7 @@ go run main.go start
 **Development Mode**
 
 ```bash
-cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+corepack pnpm -C web install && corepack pnpm -C web run dev
 ## Open a new terminal, start the backend service
 go run main.go start
 ## Access the frontend at
@@ -109,7 +109,9 @@ The configuration file is located at `data/config.json` by default and is automa
   },
   "log": {
     "level": "info"
-  }
+  },
+  "admin_cookie_secure": true,
+  "admin_origins": "https://octopus.example.com"
 }
 ```
 
@@ -122,6 +124,8 @@ The configuration file is located at `data/config.json` by default and is automa
 | `database.type` | Database type | `sqlite` |
 | `database.path` | Database connection string | `data/data.db` |
 | `log.level` | Log level | `info` |
+| `admin_cookie_secure` | Whether the admin Cookie is HTTPS-only (enable for HTTPS deployments; keep `false` for direct HTTP access) | `false` |
+| `admin_origins` | Exact origins allowed to access the admin panel, comma-separated; `*` is not supported | empty |
 
 **Database Configuration:**
 
@@ -168,12 +172,17 @@ All configuration options can be overridden via environment variables using the 
 | `OCTOPUS_DATABASE_TYPE` | `database.type` |
 | `OCTOPUS_DATABASE_PATH` | `database.path` |
 | `OCTOPUS_LOG_LEVEL` | `log.level` |
+| `OCTOPUS_ADMIN_COOKIE_SECURE` | `admin_cookie_secure` |
+| `OCTOPUS_ADMIN_ORIGINS` | `admin_origins` |
 | `OCTOPUS_GITHUB_PAT` | For rate limiting when getting the latest version (optional) |
 | `OCTOPUS_RELAY_MAX_SSE_EVENT_SIZE` | Maximum SSE event size (optional) |
 | `OCTOPUS_IMAGES_BODY_MEMORY_THRESHOLD_MB` | Images request body in-memory threshold. If exceeded, it will be spooled to a temporary file (optional, default 16) |
 | `OCTOPUS_IMAGES_BODY_MAX_MB` | Images request body maximum size. Requests above this limit are rejected (optional, default 256) |
 | `OCTOPUS_IMAGES_BODY_TMP_DIR` | Images request body temporary directory (optional, default `./cache`) |
 | `OCTOPUS_IMAGES_BODY_TMP_CLEANUP_HOURS` | Startup cleanup threshold for temporary files (optional, default 24) |
+
+
+> Remote backend development: use `OCTOPUS_DEV_PROXY_TARGET="http://remote-host:8080" corepack pnpm -C web run dev`. This variable is only used by the `next dev` rewrite and does not affect the production static export.
 
 ## 📸 Screenshots
 

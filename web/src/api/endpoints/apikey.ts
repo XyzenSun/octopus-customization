@@ -39,7 +39,8 @@ export function useAPIKeyLogin() {
 
     return useMutation({
         mutationFn: async (apiKey: string) => {
-            // 先设置以便 apiClient 发送请求时带上 token
+            // 先清理可能存在的管理员 Cookie，再切换到显式 Bearer 身份。
+            await apiClient.post<null>('/api/v1/user/logout', {});
             setAPIKeyAuth(apiKey);
             await apiClient.get<null>('/api/v1/apikey/login');
             return apiKey;

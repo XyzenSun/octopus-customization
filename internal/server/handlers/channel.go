@@ -19,7 +19,7 @@ import (
 
 func init() {
 	router.NewGroupRouter("/api/v1/channel").
-		Use(middleware.Auth()).
+		Use(middleware.AdminAuth()).
 		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/list", http.MethodGet).
@@ -46,7 +46,7 @@ func init() {
 				Handle(fetchModel),
 		)
 	router.NewGroupRouter("/api/v1/channel").
-		Use(middleware.Auth()).
+		Use(middleware.AdminAuth()).
 		AddRoute(
 			router.NewRoute("/sync", http.MethodPost).
 				Handle(syncChannel),

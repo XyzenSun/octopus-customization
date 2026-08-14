@@ -338,7 +338,9 @@ step_runtime_probe() {
 {
   "server":   { "host": "127.0.0.1", "port": ${TEST_PORT} },
   "database": { "type": "sqlite", "path": "${TEST_TMP_DIR}/test.db" },
-  "log":      { "level": "warn" }
+  "log":      { "level": "warn" },
+  "admin_cookie_secure": false,
+  "admin_origins": "http://127.0.0.1:${TEST_PORT}"
 }
 EOF
     log_info "配置文件: ${cfg} (port=${TEST_PORT})"
@@ -381,6 +383,7 @@ EOF
     local unauth_body unauth_code
     unauth_code=$(curl -s -o "${TEST_TMP_DIR}/unauth.body" \
         -w '%{http_code}' --max-time 5 \
+        -H "Origin: ${base}" \
         "${base}/api/v1/user/status" 2>/dev/null || echo "000")
     unauth_body=$(cat "${TEST_TMP_DIR}/unauth.body" 2>/dev/null || echo "")
     if [ "${unauth_code}" = "401" ] || [ "${unauth_code}" = "400" ]; then
@@ -396,45 +399,44 @@ EOF
         check_fail "未鉴权响应体缺少 code 字段; body=${unauth_body}"
     fi
 
-    # 子检查 2: admin/admin 登录拿 token
-    local login_body login_code
+    # 子检查 2: admin/admin 登录并保存 HttpOnly Cookie
+    local login_body login_code cookie_jar="${TEST_TMP_DIR}/cookies.txt"
     login_code=$(curl -s -o "${TEST_TMP_DIR}/login.body" \
-        -w '%{http_code}' --max-time 5 \
+        -c "${cookie_jar}" -w '%{http_code}' --max-time 5 \
         -X POST -H 'Content-Type: application/json' \
-        -d '{"username":"admin","password":"admin","expire":1}' \
+        -H "Origin: ${base}" \
+        -d '{"username":"admin","password":"admin"}' \
         "${base}/api/v1/user/login" 2>/dev/null || echo "000")
     login_body=$(cat "${TEST_TMP_DIR}/login.body" 2>/dev/null || echo "")
     if [ "${login_code}" != "200" ]; then
         check_fail "登录请求失败, code=${login_code}; body=${login_body}"
         return 1
     fi
-    local token
-    token=$(json_nested "${login_body}" data token 2>/dev/null || true)
-    if [ -n "${token}" ]; then
-        check_pass "登录成功, token 长度=${#token}"
+    if grep -q 'octopus_admin_session' "${cookie_jar}" 2>/dev/null; then
+        check_pass "登录成功并设置管理员 Cookie"
     else
-        check_fail "登录响应缺少 data.token; body=${login_body}"
+        check_fail "登录响应未设置管理员 Cookie; body=${login_body}"
         return 1
     fi
 
-    # 子检查 3: 带 Bearer token 访问 /status, 期望 200/"ok"
+    # 子检查 3: 携带 Cookie 访问 /status, 期望 200/admin
     local auth_body auth_code
     auth_code=$(curl -s -o "${TEST_TMP_DIR}/auth.body" \
         -w '%{http_code}' --max-time 5 \
-        -H "Authorization: Bearer ${token}" \
+        -b "${cookie_jar}" -H "Origin: ${base}" \
         "${base}/api/v1/user/status" 2>/dev/null || echo "000")
     auth_body=$(cat "${TEST_TMP_DIR}/auth.body" 2>/dev/null || echo "")
     if [ "${auth_code}" = "200" ]; then
-        check_pass "鉴权后 GET /status 返回 200"
+        check_pass "Cookie 鉴权后 GET /status 返回 200"
     else
-        check_fail "鉴权后 GET /status 期望 200, 实际 ${auth_code}; body=${auth_body}"
+        check_fail "Cookie 鉴权后 GET /status 期望 200, 实际 ${auth_code}; body=${auth_body}"
     fi
-    local data_field
-    data_field=$(json_field "${auth_body}" "data" || true)
-    if [ "${data_field}" = "ok" ]; then
-        check_pass '鉴权响应 data 字段为 "ok"'
+    local kind_field
+    kind_field=$(json_nested "${auth_body}" data kind 2>/dev/null || true)
+    if [ "${kind_field}" = "admin" ]; then
+        check_pass '鉴权响应 data.kind 为 "admin"'
     else
-        check_fail "鉴权响应 data 字段期望 'ok', 实际 '${data_field}'; body=${auth_body}"
+        check_fail "鉴权响应 data.kind 期望 'admin', 实际 '${kind_field}'; body=${auth_body}"
     fi
 
     # SIGTERM 关闭由 cleanup() 处理 (trap EXIT)

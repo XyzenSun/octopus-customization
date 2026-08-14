@@ -2,8 +2,6 @@ package op
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"runtime"
 	"sync"
 	"time"
@@ -29,36 +27,6 @@ var relayLogFlushLock sync.Mutex
 
 var relayLogSubscribers = make(map[chan model.RelayLog]struct{})
 var relayLogSubscribersLock sync.RWMutex
-
-var relayLogStreamTokens = make(map[string]struct{})
-var relayLogStreamTokensLock sync.RWMutex
-
-func RelayLogStreamTokenCreate() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	token := hex.EncodeToString(bytes)
-
-	relayLogStreamTokensLock.Lock()
-	relayLogStreamTokens[token] = struct{}{}
-	relayLogStreamTokensLock.Unlock()
-
-	return token, nil
-}
-
-func RelayLogStreamTokenVerify(token string) bool {
-	relayLogStreamTokensLock.RLock()
-	_, ok := relayLogStreamTokens[token]
-	relayLogStreamTokensLock.RUnlock()
-	return ok
-}
-
-func RelayLogStreamTokenRevoke(token string) {
-	relayLogStreamTokensLock.Lock()
-	delete(relayLogStreamTokens, token)
-	relayLogStreamTokensLock.Unlock()
-}
 
 func RelayLogSubscribe() chan model.RelayLog {
 	ch := make(chan model.RelayLog, 10)

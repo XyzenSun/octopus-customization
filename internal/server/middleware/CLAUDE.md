@@ -6,7 +6,8 @@
 
 ## 文件索引
 
-- `auth.go` — JWT 校验中间件（管理面板用）+ APIKey 校验中间件（上游 LLM 转发用）
+- `admin_origin.go` — `Sec-Fetch-Site` 优先、Origin/Referer 兜底的管理路由同源校验
+- `auth.go` — 管理员 HttpOnly Cookie 校验 + APIKey Bearer 校验
 - `cors.go` — CORS 跨域头
 - `logger.go` — 请求日志记录（接入 `internal/utils/log`）
 - `static.go` — 嵌入式静态文件服务（`static/out/` 的 SPA）
@@ -14,6 +15,7 @@
 
 ## 关键约束
 
+- **管理员认证边界**：管理路由统一使用 `AdminAuth()`；login/logout 使用 `AdminSameOrigin()`。管理员 Cookie 不支持跨域凭据，API Key 路由继续使用 Bearer。
 - **每个中间件单一职责**：不要在 auth 里夹带日志，不要在 logger 里写鉴权。
 - **失败短路用 abort + resp**：中间件失败时调 `resp.Error(c, ...)` + `c.Abort()`，**不**直接 `c.JSON` + `return`（避免后续 handler 仍执行）。
 - **APIKey 鉴权走缓存**：`APIKeyAuth` 通过 `op.APIKeyAuthenticate(key)` 命中内存缓存，不要每请求查 db。

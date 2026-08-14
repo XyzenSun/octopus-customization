@@ -17,7 +17,7 @@ Next.js 16 + React 19 的管理面板。**静态导出**（`output: "export"`）
 
 ```bash
 # 开发模式（指向后端）
-cd web && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+cd web && OCTOPUS_DEV_PROXY_TARGET="http://127.0.0.1:8080" pnpm run dev
 
 # 构建并交付到 Go embed
 cd web && pnpm run build && cd .. && mv web/out static/
@@ -25,6 +25,7 @@ cd web && pnpm run build && cd .. && mv web/out static/
 
 ## 关键约束
 
+- **认证与同源**：管理员使用固定 7 天 HttpOnly Cookie，API Key 使用 Bearer；浏览器请求保持同源，远程后端只通过 `OCTOPUS_DEV_PROXY_TARGET` 的 dev rewrite 访问。
 - **静态导出限制**：不能用 Next.js Server Components 的 server-side 数据获取、API routes、middleware；所有数据走 `src/api/client.ts` 调后端。
 - **路径别名**：组件/工具优先用 `@/...` 引入，不要写大量 `../../`。
 - **i18n**：新增文案必须在 `public/locale/<lang>/*.json` 同步增加 key；运行时由 `next-intl` 加载。

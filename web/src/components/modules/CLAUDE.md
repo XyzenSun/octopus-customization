@@ -21,4 +21,4 @@
 - **每个域目录自治**：模块内用 `index.tsx` 作为入口，按需拆 `Card.tsx / Form.tsx / Create.tsx / Editor.tsx / ItemList.tsx / utils.ts`；模块间不互相 import 内部文件。
 - **跨模块共享走 common**：两个模块都需要的东西放到 `web/src/components/common/`，不要在某个模块里写然后让另一个模块跨域 import。
 - **新 API 走 endpoints 集中管理**：模块若需要新调用，去 `@/api/endpoints/<resource>` 加函数，不要在模块内联 `fetch`/`client.post`。"不直接 fetch"由 `web/src/CLAUDE.md` 全局约束；这里强调的是"也不要在模块里写一份新的 client wrapper"。
-- **日志模块特殊**：`log/` 的实时流要先 GET stream-token 再连 EventSource，详见 `web/src/api/endpoints/log.ts` 中的 stream 实现。
+- **日志模块鉴权**：`log/` 的实时流直接连接同源 EventSource，由管理员 HttpOnly Cookie 鉴权。

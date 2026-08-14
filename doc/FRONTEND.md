@@ -29,7 +29,7 @@ web/
 └── src/
     ├── app/                # Next.js App Router（layout.tsx / page.tsx / globals.css）
     ├── api/               # 后端 API 客户端
-    │   ├── client.ts       # 统一 fetch wrapper（JWT 注入、401 登出、{code,data,msg} 解包）
+    │   ├── client.ts       # 统一 fetch wrapper（管理员 Cookie、API Key Bearer、401 登出、响应解包）
     │   ├── types.ts        # 跨资源共享类型
     │   └── endpoints/      # 按资源拆分的 hook（useXxxList / useXxxCreate ...）
     ├── components/
@@ -53,8 +53,8 @@ cd web && pnpm install
 # 开发模式（API 通过 next.config.ts rewrites 代理到 127.0.0.1:8080，无跨域）
 cd web && pnpm run dev
 
-# 远程后端开发（需配合后端 CORS 设置）
-cd web && NEXT_PUBLIC_API_BASE_URL="https://<host>:8080" pnpm run dev
+# 远程后端开发（浏览器仍同源访问 Next dev server）
+OCTOPUS_DEV_PROXY_TARGET="http://<host>:8080" pnpm -C web run dev
 
 # 类型检查
 cd web && pnpm exec tsc --noEmit
@@ -103,7 +103,7 @@ modules/  →  common/  →  ui/  →  lib/
 ### API 调用
 
 - 组件**只 import** `@/api/endpoints/<resource>` 提供的 hook，**不直接** `fetch`
-- `client.ts` 统一注入 `Authorization: Bearer <jwt>`、解包 `{code, data, msg}`、401 自动登出
+- `client.ts` 让管理员请求携带同源 HttpOnly Cookie；仅 API Key 身份注入 `Authorization: Bearer <api_key>`
 - 新增资源：在 `endpoints/` 新建 `<resource>.ts`，导出 `useXxxList / useXxxCreate / useXxxUpdate / useXxxDelete` 风格 hook
 - 类型与后端 `internal/model/<resource>.go` 的 JSON tag 对齐
 
@@ -159,13 +159,7 @@ LocaleProvider        # next-intl i18n
 
 ## SSE 实时流（日志模块）
 
-浏览器 `EventSource` 不支持自定义 header，所以日志流采用"两步"模式：
-
-1. `GET /api/v1/log/stream-token` 拿一次性 token（JWT 鉴权）
-2. 用 token 作 query 参数构造 `EventSource`：`/api/v1/log/stream?token=xxx`
-3. 后端验证并 revoke token，避免 token 复用
-
-新增 SSE 端点沿用此模式。
+日志流 `/api/v1/log/stream` 与其他管理接口一样使用同源管理员 Cookie。`EventSource` 会自动携带 Cookie，不再申请或暴露 URL 临时令牌。
 
 ## 构建产物嵌入
 
@@ -190,7 +184,7 @@ web/out/  ──(cp -r)──>  static/out/  ──(go:embed)──>  二进制
 
 ### dev 模式跨域
 
-`next.config.ts` 在 dev 模式下通过 `rewrites` 把 `/api/*` 和 `/v1/*` 代理到 `http://127.0.0.1:8080`，无需 CORS 配置。生产构建不用 rewrites（静态导出不支持），前端与后端同源。
+`next.config.ts` 在 dev 模式下通过 `rewrites` 把 `/api/*` 和 `/v1/*` 代理到 `OCTOPUS_DEV_PROXY_TARGET`（默认 `http://127.0.0.1:8080`），无需 CORS 配置。生产构建不用 rewrites（静态导出不支持），前端与后端同源。
 
 ### React Compiler
 

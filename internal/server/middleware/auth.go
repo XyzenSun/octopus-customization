@@ -12,15 +12,25 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Auth() gin.HandlerFunc {
+// AdminAuth 使用 HttpOnly 会话 Cookie 鉴权管理面板请求。
+// login 等未登录路由单独使用 AdminSameOrigin，避免认证前缺少来源校验。
+func AdminAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := c.GetHeader("Authorization")
-		if token == "" {
-			resp.Error(c, http.StatusBadRequest, resp.ErrBadRequest)
+		if !isAdminSameOrigin(c) {
+			resp.Error(c, http.StatusForbidden, resp.ErrForbidden)
 			c.Abort()
 			return
 		}
-		if !auth.VerifyJWTToken(strings.TrimPrefix(token, "Bearer ")) {
+		c.Header("Cache-Control", "private, no-store")
+
+		token, err := c.Cookie(auth.AdminSessionCookieName)
+		if err != nil || token == "" {
+			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
+			c.Abort()
+			return
+		}
+		if !auth.VerifyJWTToken(token) {
+			auth.ClearAdminSessionCookie(c.Writer)
 			resp.Error(c, http.StatusUnauthorized, resp.ErrUnauthorized)
 			c.Abort()
 			return

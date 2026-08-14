@@ -60,11 +60,10 @@
 |------|--------|--------|---------|------|
 | Username | `string` | `username` | — | 用户名 |
 | Password | `string` | `password` | — | 密码（明文，由后端 bcrypt 比对） |
-| Expire | `int` | `expire` | — | Token 过期时长（小时） |
 
 #### UserChangePassword（修改密码请求）
 
-`POST /api/v1/user/change-password`（需 JWT）
+`POST /api/v1/user/change-password`（需管理员 Cookie）
 
 | 字段 | Go类型 | JSON键 | binding | 说明 |
 |------|--------|--------|---------|------|
@@ -73,7 +72,7 @@
 
 #### UserChangeUsername（修改用户名请求）
 
-`POST /api/v1/user/change-username`（需 JWT）
+`POST /api/v1/user/change-username`（需管理员 Cookie）
 
 | 字段 | Go类型 | JSON键 | binding | 说明 |
 |------|--------|--------|---------|------|
@@ -81,12 +80,9 @@
 
 ### 响应 DTO
 
-#### UserLoginResponse（登录响应）
+#### 登录响应
 
-| 字段 | Go类型 | JSON键 | 说明 |
-|------|--------|--------|------|
-| Token | `string` | `token` | JWT Token |
-| ExpireAt | `string` | `expire_at` | 过期时间（字符串格式） |
+`data` 为 `{ "kind": "admin" }`，JWT 仅通过固定 7 天的 HttpOnly Cookie 传递。
 
 #### 其它接口
 
@@ -94,13 +90,13 @@
 |------|------------|------|
 | `/change-password` | `"password changed successfully"` | 字符串提示 |
 | `/change-username` | `"username changed successfully"` | 字符串提示 |
-| `/status` | `"ok"` | 健康检查 |
+| `/status` | `{ "kind": "admin" }` | 管理员会话检查 |
 
 ---
 
 ## 渠道模块（Channel）
 
-路径前缀 `/api/v1/channel`，全部需要 JWT 鉴权。
+路径前缀 `/api/v1/channel`，全部需要管理员 Cookie 鉴权。
 
 ### 请求 DTO
 
@@ -232,7 +228,7 @@
 
 ## 分组模块（Group）
 
-路径前缀 `/api/v1/group`，全部需要 JWT 鉴权。
+路径前缀 `/api/v1/group`，全部需要管理员 Cookie 鉴权。
 
 ### 请求 DTO
 
@@ -363,7 +359,7 @@
 
 ## 设置模块（Setting）
 
-路径前缀 `/api/v1/setting`，全部需要 JWT 鉴权。
+路径前缀 `/api/v1/setting`，全部需要管理员 Cookie 鉴权。
 
 ### 请求 DTO
 
@@ -591,7 +587,7 @@
 
 ## 统计模块（Stats）
 
-路径前缀 `/api/v1/stats`，全部需要 JWT 鉴权。无请求体。
+路径前缀 `/api/v1/stats`，全部需要管理员 Cookie 鉴权。无请求体。
 
 | 接口 | 响应 `data` | 说明 |
 |------|------------|------|
@@ -607,7 +603,7 @@
 
 ## 熔断模块（Circuit）
 
-路径前缀 `/api/v1/circuit`，全部需要 JWT 鉴权。
+路径前缀 `/api/v1/circuit`，全部需要管理员 Cookie 鉴权。
 
 ### 响应 DTO
 
@@ -627,7 +623,7 @@
 
 ## 更新模块（Update）
 
-路径前缀 `/api/v1/update`，全部需要 JWT 鉴权。无请求体。
+路径前缀 `/api/v1/update`，全部需要管理员 Cookie 鉴权。无请求体。
 
 | 接口 | 响应 `data` | 说明 |
 |------|------------|------|

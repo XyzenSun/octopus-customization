@@ -18,7 +18,7 @@ Next.js App Router + React 19 的源码根。按"基础设施 / 业务模块 / �
 ## 关键约束
 
 - **状态管理**：全局共享状态用 Zustand store（在 `stores/`）；组件局部状态用 `useState`。**不要**引入 Redux/Recoil。
-- **服务端数据**：通过 `@/api/endpoints/<resource>` 调用，自动经过 `client.ts` 的 JWT 注入；**不**直接 `fetch`，不绕过 client wrapper。
+- **服务端数据**：通过 `@/api/endpoints/<resource>` 调用，自动经过 `client.ts` 的管理员 Cookie / API Key Bearer 分流；**不**直接 `fetch`，不绕过 client wrapper。
 - **路由组织**：新增页面在 `route/config.tsx` 注册条目（用 `lazyWithPreload`），不直接在 `app/` 写大量物理文件。
 - **样式**：TailwindCSS 4 utility-first；只有 `globals.css` 写少量全局变量与 reset，组件不写独立 .css。
 - **i18n**：所有用户可见文案用 `next-intl` 的 `useTranslations`，避免硬编码中/英字符串。

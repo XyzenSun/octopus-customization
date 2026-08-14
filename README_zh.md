@@ -75,7 +75,7 @@ go run main.go start
 **开发模式**
 
 ```bash
-cd web && pnpm install && NEXT_PUBLIC_API_BASE_URL="http://127.0.0.1:8080" pnpm run dev
+corepack pnpm -C web install && corepack pnpm -C web run dev
 ## 新建终端,启动后端服务
 go run main.go start
 ## 访问前端地址
@@ -109,7 +109,9 @@ http://localhost:3000
   },
   "log": {
     "level": "info"
-  }
+  },
+  "admin_cookie_secure": true,
+  "admin_origins": "https://octopus.example.com"
 }
 ```
 
@@ -122,6 +124,8 @@ http://localhost:3000
 | `database.type` | 数据库类型 | `sqlite` |
 | `database.path` | 数据库连接地址 | `data/data.db` |
 | `log.level` | 日志级别 | `info` |
+| `admin_cookie_secure` | 管理员 Cookie 是否仅通过 HTTPS 发送（HTTPS 部署设为 `true`，直接通过 HTTP 访问时保持 `false`） | `false` |
+| `admin_origins` | 允许访问管理面板的精确 Origin，逗号分隔；不支持 `*` | 空 |
 
 **数据库配置：**
 
@@ -168,6 +172,8 @@ http://localhost:3000
 | `OCTOPUS_DATABASE_TYPE` | `database.type` |
 | `OCTOPUS_DATABASE_PATH` | `database.path` |
 | `OCTOPUS_LOG_LEVEL` | `log.level` |
+| `OCTOPUS_ADMIN_COOKIE_SECURE` | `admin_cookie_secure` |
+| `OCTOPUS_ADMIN_ORIGINS` | `admin_origins` |
 | `OCTOPUS_GITHUB_PAT` | 用于获取最新版本时的速率限制(可选) |
 | `OCTOPUS_RELAY_MAX_SSE_EVENT_SIZE` | 最大 SSE 事件大小(可选) |
 | `OCTOPUS_IMAGES_BODY_MEMORY_THRESHOLD_MB` | Images 请求体内存缓存阈值，超过阈值会落盘临时文件(可选，默认 16) |
@@ -175,6 +181,9 @@ http://localhost:3000
 | `OCTOPUS_IMAGES_BODY_TMP_DIR` | Images 请求体临时文件目录(可选，默认 `./cache`) |
 | `OCTOPUS_IMAGES_BODY_TMP_CLEANUP_HOURS` | 启动时清理临时文件的时间阈值(可选，默认 24) |
 
+
+
+> 远程后端开发：使用 `OCTOPUS_DEV_PROXY_TARGET="http://远程IP:8080" corepack pnpm -C web run dev`。该变量只供 `next dev` rewrite 使用，不影响生产静态导出。
 
 ## 📸 界面预览
 

@@ -2,188 +2,183 @@ import { useEffect } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { apiClient, setAuthStoreGetter } from '../client';
+import { apiClient, setAuthStoreGetter, type ClientAuthSession } from '../client';
 import { logger } from '@/lib/logger';
 
-/**
- * 用户登录请求
- */
 export interface UserLoginRequest {
     username: string;
     password: string;
-    expire: number; // token 过期时间（秒）
-    code?: string; // TOTP 验证码，未开启两步验证时可省略
+    code?: string;
 }
 
-/**
- * 用户登录响应
- */
-export interface UserLoginResponse {
-    token: string;
-    expire_at: string; // ISO 8601 格式
+interface AdminSessionResponse {
+    kind: 'admin';
 }
 
-/**
- * 修改密码请求
- */
 export interface ChangePasswordRequest {
     old_password: string;
     new_password: string;
 }
 
-/**
- * 修改用户名请求
- */
 export interface ChangeUsernameRequest {
     new_username: string;
 }
 
-/**
- * 服务器时间与两步验证状态（登录页在未登录状态下调用）
- */
 export interface ServerTimeResponse {
     server_time: string;
     timezone: string;
     two_factor_enabled: boolean;
 }
 
-/**
- * 两步验证绑定信息
- */
 export interface TwoFactorSetupResponse {
     secret: string;
     uri: string;
-    qr_code: string; // data:image/png;base64,... 可直接作为 <img src>
+    qr_code: string;
 }
 
-/**
- * 认证状态 Store
- */
+export type AuthSession = ClientAuthSession;
+
+type PersistedAuthState = {
+    session: AuthSession;
+};
+
 interface AuthState {
+    session: AuthSession;
     isAuthenticated: boolean;
     isLoading: boolean;
     isAPIKeyAuth: boolean;
-    token: string | null;
-    expireAt: string | null;
 
-    // Actions
-    setAuth: (token: string, expireAt: string) => void;
+    setAdminAuth: () => void;
     setAPIKeyAuth: (apiKey: string) => void;
     checkAuth: () => Promise<void>;
     logout: () => void;
 }
 
-/**
- * 认证状态管理 Store（使用 zustand + persist）
- */
+function authFlags(session: AuthSession) {
+    return {
+        isAuthenticated: session.kind === 'admin' || session.kind === 'apiKey',
+        isAPIKeyAuth: session.kind === 'apiKey',
+        isLoading: session.kind === 'checking',
+    };
+}
+
+function persistedSession(session: AuthSession): AuthSession {
+    return session.kind === 'apiKey'
+        ? session
+        : { kind: 'anonymous' };
+}
+
+function migrateAuthState(persistedState: unknown): PersistedAuthState {
+    if (!persistedState || typeof persistedState !== 'object') {
+        return { session: { kind: 'anonymous' } };
+    }
+
+    const state = persistedState as {
+        session?: AuthSession;
+        token?: string | null;
+        isAPIKeyAuth?: boolean;
+    };
+    if (state.session?.kind === 'apiKey' && state.session.apiKey) {
+        return { session: state.session };
+    }
+    if (state.isAPIKeyAuth && state.token) {
+        return { session: { kind: 'apiKey', apiKey: state.token } };
+    }
+
+    // 旧管理员 JWT 不转换为 Cookie；升级后重新登录，避免保留双认证协议。
+    return { session: { kind: 'anonymous' } };
+}
+
 export const useAuthStore = create<AuthState>()(
-    persist(
+    persist<AuthState, [], [], PersistedAuthState>(
         (set, get) => ({
+            session: { kind: 'checking' },
             isAuthenticated: false,
             isLoading: true,
             isAPIKeyAuth: false,
-            token: null,
-            expireAt: null,
 
-            setAuth: (token: string, expireAt: string) => {
-                set({
-                    isAuthenticated: true,
-                    isAPIKeyAuth: false,
-                    token,
-                    expireAt,
-                    isLoading: false
-                });
+            setAdminAuth: () => {
+                const session: AuthSession = { kind: 'admin' };
+                set({ session, ...authFlags(session) });
             },
 
             setAPIKeyAuth: (apiKey: string) => {
-                set({
-                    isAuthenticated: true,
-                    isAPIKeyAuth: true,
-                    token: apiKey,
-                    expireAt: null,
-                    isLoading: false
-                });
+                const session: AuthSession = { kind: 'apiKey', apiKey };
+                set({ session, ...authFlags(session) });
             },
 
             checkAuth: async () => {
-                const { token, expireAt, isAPIKeyAuth } = get();
-
-                if (!token) {
-                    set({ isAuthenticated: false, isLoading: false });
-                    return;
-                }
-
-                // API Key 不检查本地过期时间
-                if (!isAPIKeyAuth) {
-                    if (!expireAt || Date.now() >= new Date(expireAt).getTime()) {
-                        get().logout();
-                        return;
-                    }
-                }
+                const persisted = get().session;
+                const checkingSession: AuthSession = persisted.kind === 'apiKey'
+                    ? { kind: 'checking', apiKey: persisted.apiKey }
+                    : { kind: 'checking' };
+                set({ session: checkingSession, ...authFlags(checkingSession) });
 
                 try {
-                    // API Key 模式只需校验 key 是否有效即可
-                    const endpoint = isAPIKeyAuth ? '/api/v1/apikey/login' : '/api/v1/user/status';
-                    await apiClient.get<unknown>(endpoint);
-                    set({ isAuthenticated: true, isLoading: false });
+                    if (checkingSession.apiKey) {
+                        await apiClient.get<unknown>('/api/v1/apikey/login');
+                        const session: AuthSession = { kind: 'apiKey', apiKey: checkingSession.apiKey };
+                        set({ session, ...authFlags(session) });
+                        return;
+                    }
+
+                    await apiClient.get<AdminSessionResponse>('/api/v1/user/status');
+                    const session: AuthSession = { kind: 'admin' };
+                    set({ session, ...authFlags(session) });
                 } catch (error) {
                     logger.error('认证验证失败:', error);
-                    get().logout();
+                    const session: AuthSession = { kind: 'anonymous' };
+                    set({ session, ...authFlags(session) });
                 }
             },
 
             logout: () => {
-                set({
-                    isAuthenticated: false,
-                    isAPIKeyAuth: false,
-                    token: null,
-                    expireAt: null,
-                    isLoading: false
-                });
-            }
+                const previousSession = get().session;
+                const session: AuthSession = { kind: 'anonymous' };
+                set({ session, ...authFlags(session) });
+
+                if (previousSession.kind === 'admin') {
+                    void apiClient.post<null>('/api/v1/user/logout', {}).catch((error) => {
+                        logger.error('退出登录失败:', error);
+                    });
+                }
+            },
         }),
         {
             name: 'auth-storage',
-            partialize: (state) => ({
-                token: state.token,
-                expireAt: state.expireAt,
-                isAPIKeyAuth: state.isAPIKeyAuth,
-            })
+            version: 2,
+            partialize: (state) => ({ session: persistedSession(state.session) }),
+            migrate: (state) => migrateAuthState(state),
+            merge: (persisted, current) => {
+                const session = (persisted as PersistedAuthState | undefined)?.session ?? { kind: 'anonymous' };
+                return {
+                    ...current,
+                    session,
+                    ...authFlags({ kind: 'checking' }),
+                };
+            },
         }
     )
 );
 
-// 注册 auth store getter 到 apiClient
 if (typeof window !== 'undefined') {
     setAuthStoreGetter(() => {
         const state = useAuthStore.getState();
         return {
-            token: state.token,
-            logout: state.logout
+            session: state.session,
+            logout: state.logout,
         };
     });
 }
 
-/**
- * 用户登录 Hook
- * 
- * @example
- * const login = useLogin();
- * login.mutate({ username: 'admin', password: '123456', expire: 86400 });
- * 
- * if (login.isPending) return <Loading />;
- * if (login.isError) return <Error message={login.error.message} />;
- */
 export function useLogin() {
-    const { setAuth } = useAuthStore();
+    const { setAdminAuth } = useAuthStore();
 
     return useMutation({
-        mutationFn: async (data: UserLoginRequest) => {
-            return apiClient.post<UserLoginResponse>('/api/v1/user/login', data);
-        },
-        onSuccess: (data) => {
-            // 保存到 zustand store
-            setAuth(data.token, data.expire_at);
+        mutationFn: (data: UserLoginRequest) =>
+            apiClient.post<AdminSessionResponse>('/api/v1/user/login', data),
+        onSuccess: () => {
+            setAdminAuth();
         },
         onError: (error) => {
             logger.error('登录失败:', error);
@@ -191,13 +186,6 @@ export function useLogin() {
     });
 }
 
-/**
- * 修改密码 Hook
- * 
- * @example
- * const changePassword = useChangePassword();
- * changePassword.mutate({ oldPassword: '123', newPassword: '456' });
- */
 export function useChangePassword() {
     return useMutation({
         mutationFn: async (data: { oldPassword: string; newPassword: string }) => {
@@ -216,13 +204,6 @@ export function useChangePassword() {
     });
 }
 
-/**
- * 修改用户名 Hook
- * 
- * @example
- * const changeUsername = useChangeUsername();
- * changeUsername.mutate({ newUsername: 'newname' });
- */
 export function useChangeUsername() {
     return useMutation({
         mutationFn: async (data: { newUsername: string }) => {
@@ -240,22 +221,10 @@ export function useChangeUsername() {
     });
 }
 
-/**
- * 获取服务器时间与两步验证状态
- *
- * 登录页在两个时机调用：进入页面时判断是否展示验证码输入框；登录失败时取一次
- * 服务器时间拼进错误提示。TOTP 基于 Unix 时间戳，设备与服务器的绝对时间相差
- * 超过 30 秒就会算出不同的验证码，给出服务器时间便于用户自查。
- */
 export async function fetchServerTime() {
     return apiClient.get<ServerTimeResponse>('/api/v1/user/time');
 }
 
-/**
- * 两步验证状态 Hook
- *
- * 只在挂载时取一次：登录成功后页面即卸载，持续轮询没有意义，徒增请求。
- */
 export function useServerTime(enabled = true) {
     return useQuery({
         queryKey: ['server-time'],
@@ -267,12 +236,6 @@ export function useServerTime(enabled = true) {
     });
 }
 
-/**
- * 生成两步验证密钥 Hook（绑定流程第一步）
- *
- * 每次调用都会生成新密钥覆盖旧的，但不会开启开关——必须再调 useEnableTwoFactor
- * 验证一次验证码才真正生效。
- */
 export function useSetupTwoFactor() {
     return useMutation({
         mutationFn: async () => {
@@ -284,9 +247,6 @@ export function useSetupTwoFactor() {
     });
 }
 
-/**
- * 启用两步验证 Hook（绑定流程第二步）
- */
 export function useEnableTwoFactor() {
     return useMutation({
         mutationFn: async (code: string) => {
@@ -298,9 +258,6 @@ export function useEnableTwoFactor() {
     });
 }
 
-/**
- * 关闭两步验证 Hook，需提供当前验证码
- */
 export function useDisableTwoFactor() {
     return useMutation({
         mutationFn: async (code: string) => {
@@ -312,35 +269,23 @@ export function useDisableTwoFactor() {
     });
 }
 
-/**
- * 认证状态和方法 Hook
- *
- * @example
- * const auth = useAuth();
- *
- * if (auth.isAuthenticated) {
- *   // 已登录
- * }
- *
- * auth.logout(); // 登出
- */
 export function useAuth() {
     const store = useAuthStore();
     const { checkAuth, isLoading } = store;
 
-    // 只在首次挂载时检查认证状态
     useEffect(() => {
         if (isLoading) {
-            checkAuth();
+            void checkAuth();
         }
+        // 有意只在挂载时检查一次，后续 401 由 apiClient 统一退出。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // 有意只在挂载时执行一次
+    }, []);
 
     return {
+        session: store.session,
         isAuthenticated: store.isAuthenticated,
         isAPIKeyAuth: store.isAPIKeyAuth,
         isLoading: store.isLoading,
         logout: store.logout,
     };
 }
-

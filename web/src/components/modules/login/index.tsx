@@ -54,7 +54,6 @@ export function LoginForm({ onLoginSuccess }: { onLoginSuccess?: () => void }) {
           username,
           password,
           code: twoFactorEnabled ? code : undefined,
-          expire: 86400,
         })
       } else {
         await apiKeyLoginMutation.mutateAsync(apiKey)

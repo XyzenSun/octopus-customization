@@ -12,7 +12,7 @@ import (
 
 func init() {
 	router.NewGroupRouter("/api/v1/circuit").
-		Use(middleware.Auth()).
+		Use(middleware.AdminAuth()).
 		AddRoute(
 			router.NewRoute("/status", http.MethodGet).
 				Handle(getCircuitStatus),

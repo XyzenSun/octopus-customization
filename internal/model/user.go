@@ -7,16 +7,15 @@ import (
 )
 
 type User struct {
-	ID       uint   `gorm:"primaryKey"`
-	Username string `gorm:"unique"`
-	Password string `gorm:"not null"`
+	ID              uint   `gorm:"primaryKey"`
+	Username        string `gorm:"unique"`
+	Password        string `gorm:"not null"`
 	TwoFactorSecret string
 }
 
 type UserLogin struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Expire   int    `json:"expire"`
 	// TOTP 验证码
 	Code string `json:"code"`
 }
@@ -28,11 +27,6 @@ type UserChangePassword struct {
 
 type UserChangeUsername struct {
 	NewUsername string `json:"new_username"`
-}
-
-type UserLoginResponse struct {
-	Token    string `json:"token"`
-	ExpireAt string `json:"expire_at"`
 }
 
 // TwoFactorSetupResponse 绑定流程第一步的返回值。

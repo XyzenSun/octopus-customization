@@ -9,9 +9,8 @@
 
 | 方式 | 说明 | 适用路由 |
 |------|------|---------|
-| JWT Bearer | `Authorization: Bearer <jwt_token>` | 管理类接口 `/api/v1/*` |
+| 管理员会话 Cookie | `octopus_admin_session`（HttpOnly，固定 7 天） | 管理类接口 `/api/v1/*` |
 | API Key Bearer | `Authorization: Bearer <api_key>` | 终端用户接口 `/v1/*`、`/api/v1/apikey/stats`、`/api/v1/apikey/login` |
-| Stream Token | Query `?token=<stream_token>` | SSE 日志流 `/api/v1/log/stream` |
 
 ---
 
@@ -32,10 +31,11 @@
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
-| `POST` | `/api/v1/user/login` | 无 | 登录，返回 JWT Token |
-| `POST` | `/api/v1/user/change-password` | JWT | 修改密码 |
-| `POST` | `/api/v1/user/change-username` | JWT | 修改用户名 |
-| `GET` | `/api/v1/user/status` | JWT | 健康检查 |
+| `POST` | `/api/v1/user/login` | 同源 | 登录并设置管理员 Cookie |
+| `POST` | `/api/v1/user/logout` | 同源 | 清除管理员 Cookie |
+| `POST` | `/api/v1/user/change-password` | 管理员 Cookie | 修改密码 |
+| `POST` | `/api/v1/user/change-username` | 管理员 Cookie | 修改用户名 |
+| `GET` | `/api/v1/user/status` | 管理员 Cookie | 会话检查 |
 
 ### POST /api/v1/user/login
 
@@ -45,14 +45,16 @@
 |------|------|------|
 | `username` | `string` | 用户名 |
 | `password` | `string` | 密码（明文） |
-| `expire` | `int` | Token 过期时长（小时） |
 
 **响应 `data`：**
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `token` | `string` | JWT Token |
-| `expire_at` | `string` | 过期时间 |
+| `kind` | `string` | 固定为 `admin`；JWT 仅存在 HttpOnly Cookie 中 |
+
+### POST /api/v1/user/logout
+
+清除管理员 HttpOnly Cookie。接口幂等，切换到 API Key 身份时也会调用。
 
 ### POST /api/v1/user/change-password
 
@@ -77,13 +79,13 @@
 
 ### GET /api/v1/user/status
 
-**响应 `data`：** `"ok"`
+**响应 `data`：** `{ "kind": "admin" }`
 
 ---
 
 ## 渠道模块（Channel）
 
-路径前缀：`/api/v1/channel`，全部需要 JWT 鉴权。
+路径前缀：`/api/v1/channel`，全部需要管理员 Cookie 鉴权。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -203,7 +205,7 @@
 
 ## 分组模块（Group）
 
-路径前缀：`/api/v1/group`，全部需要 JWT 鉴权。
+路径前缀：`/api/v1/group`，全部需要管理员 Cookie 鉴权。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -269,10 +271,10 @@
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
-| `POST` | `/api/v1/apikey/create` | JWT | 创建 API Key |
-| `GET` | `/api/v1/apikey/list` | JWT | 列表 |
-| `POST` | `/api/v1/apikey/update` | JWT | 更新 |
-| `DELETE` | `/api/v1/apikey/delete/:id` | JWT | 删除 |
+| `POST` | `/api/v1/apikey/create` | 管理员 Cookie | 创建 API Key |
+| `GET` | `/api/v1/apikey/list` | 管理员 Cookie | 列表 |
+| `POST` | `/api/v1/apikey/update` | 管理员 Cookie | 更新 |
+| `DELETE` | `/api/v1/apikey/delete/:id` | 管理员 Cookie | 删除 |
 | `GET` | `/api/v1/apikey/stats` | API Key | 当前 Key 的统计与信息 |
 | `GET` | `/api/v1/apikey/login` | API Key | 登录探测 |
 
@@ -324,10 +326,9 @@
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
-| `GET` | `/api/v1/log/list` | JWT | 分页查询日志 |
-| `DELETE` | `/api/v1/log/clear` | JWT | 清空日志 |
-| `GET` | `/api/v1/log/stream-token` | JWT | 申请 SSE 临时令牌 |
-| `GET` | `/api/v1/log/stream` | Stream Token | SSE 实时日志推送 |
+| `GET` | `/api/v1/log/list` | 管理员 Cookie | 分页查询日志 |
+| `DELETE` | `/api/v1/log/clear` | 管理员 Cookie | 清空日志 |
+| `GET` | `/api/v1/log/stream` | 管理员 Cookie | SSE 实时日志推送 |
 
 ### GET /api/v1/log/list
 
@@ -346,19 +347,7 @@
 
 清空全部日志。**响应 `data`：** `null`
 
-### GET /api/v1/log/stream-token
-
-申请一次性 SSE Token（使用后立即吊销）。
-
-**响应 `data`：** `{ "token": "<stream_token>" }`
-
 ### GET /api/v1/log/stream
-
-**Query 参数：**
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `token` | string | 由 `/stream-token` 生成的一次性令牌 |
 
 **响应：** `text/event-stream`（SSE），每帧格式：
 
@@ -366,13 +355,13 @@
 data: {RelayLog JSON}\n\n
 ```
 
-> 响应头：`Cache-Control: no-cache`、`Connection: keep-alive`、`X-Accel-Buffering: no`
+> 响应头：`Cache-Control: no-store`、`Connection: keep-alive`、`X-Accel-Buffering: no`
 
 ---
 
 ## 设置模块（Setting）
 
-路径前缀：`/api/v1/setting`，全部需要 JWT 鉴权。
+路径前缀：`/api/v1/setting`，全部需要管理员 Cookie 鉴权。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -422,7 +411,7 @@ data: {RelayLog JSON}\n\n
 
 ## 熔断模块（Circuit）
 
-路径前缀：`/api/v1/circuit`，全部需要 JWT 鉴权。
+路径前缀：`/api/v1/circuit`，全部需要管理员 Cookie 鉴权。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -459,17 +448,17 @@ data: {RelayLog JSON}\n\n
 
 ## 模型模块（Model / LLM）
 
-路径前缀：`/api/v1/model`（JWT），兼容路由：`/v1/models`（API Key）
+路径前缀：`/api/v1/model`（管理员 Cookie），兼容路由：`/v1/models`（API Key）
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
-| `GET` | `/api/v1/model/list` | JWT | 模型价格列表 |
-| `POST` | `/api/v1/model/create` | JWT | 创建模型价格 |
-| `POST` | `/api/v1/model/update` | JWT | 更新模型价格 |
-| `POST` | `/api/v1/model/delete` | JWT | 删除模型 |
-| `GET` | `/api/v1/model/channel` | JWT | 模型-渠道关联视图 |
-| `POST` | `/api/v1/model/update-price` | JWT | 触发价格库更新 |
-| `GET` | `/api/v1/model/last-update-time` | JWT | 最近价格更新时间 |
+| `GET` | `/api/v1/model/list` | 管理员 Cookie | 模型价格列表 |
+| `POST` | `/api/v1/model/create` | 管理员 Cookie | 创建模型价格 |
+| `POST` | `/api/v1/model/update` | 管理员 Cookie | 更新模型价格 |
+| `POST` | `/api/v1/model/delete` | 管理员 Cookie | 删除模型 |
+| `GET` | `/api/v1/model/channel` | 管理员 Cookie | 模型-渠道关联视图 |
+| `POST` | `/api/v1/model/update-price` | 管理员 Cookie | 触发价格库更新 |
+| `GET` | `/api/v1/model/last-update-time` | 管理员 Cookie | 最近价格更新时间 |
 | `GET` | `/v1/models` | API Key | 兼容路由（OpenAI/Anthropic 格式） |
 
 ### GET /api/v1/model/list
@@ -549,7 +538,7 @@ data: {RelayLog JSON}\n\n
 
 ## 统计模块（Stats）
 
-路径前缀：`/api/v1/stats`，全部需要 JWT 鉴权，无请求体。
+路径前缀：`/api/v1/stats`，全部需要管理员 Cookie 鉴权，无请求体。
 
 | 方法 | 路径 | 响应 `data` | 说明 |
 |------|------|------------|------|
@@ -565,7 +554,7 @@ data: {RelayLog JSON}\n\n
 
 ## 更新模块（Update）
 
-路径前缀：`/api/v1/update`，全部需要 JWT 鉴权，无请求体。
+路径前缀：`/api/v1/update`，全部需要管理员 Cookie 鉴权，无请求体。
 
 | 方法 | 路径 | 响应 `data` | 说明 |
 |------|------|------------|------|
@@ -615,15 +604,15 @@ data: {RelayLog JSON}\n\n
 
 | 模块 | 接口数 | 鉴权方式 |
 |------|--------|---------|
-| 用户（User） | 4 | 无 / JWT |
-| 渠道（Channel） | 8 | JWT |
-| 分组（Group） | 4 | JWT |
-| API Key | 6 | JWT / API Key |
-| 日志（Log） | 4 | JWT / Stream Token |
-| 设置（Setting） | 4 | JWT |
-| 熔断（Circuit） | 2 | JWT |
-| 模型（Model） | 8 | JWT / API Key |
-| 统计（Stats） | 5 | JWT |
-| 更新（Update） | 3 | JWT |
+| 用户（User） | 6 | 同源 / 管理员 Cookie |
+| 渠道（Channel） | 8 | 管理员 Cookie |
+| 分组（Group） | 4 | 管理员 Cookie |
+| API Key | 6 | 管理员 Cookie / API Key |
+| 日志（Log） | 3 | 管理员 Cookie |
+| 设置（Setting） | 4 | 管理员 Cookie |
+| 熔断（Circuit） | 2 | 管理员 Cookie |
+| 模型（Model） | 8 | 管理员 Cookie / API Key |
+| 统计（Stats） | 5 | 管理员 Cookie |
+| 更新（Update） | 3 | 管理员 Cookie |
 | LLM 转发（Relay） | 7 | API Key |
 | **合计** | **55** | — |

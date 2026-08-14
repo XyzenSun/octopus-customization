@@ -12,7 +12,7 @@ import (
 
 func init() {
 	router.NewGroupRouter("/api/v1/stats").
-		Use(middleware.Auth()).
+		Use(middleware.AdminAuth()).
 		AddRoute(
 			router.NewRoute("/today", http.MethodGet).
 				Handle(getStatsToday),

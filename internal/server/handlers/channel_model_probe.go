@@ -17,7 +17,7 @@ import (
 
 func init() {
 	router.NewGroupRouter("/api/v1/channel").
-		Use(middleware.Auth()).
+		Use(middleware.AdminAuth()).
 		Use(middleware.RequireJSON()).
 		AddRoute(
 			router.NewRoute("/test-model", http.MethodPost).
