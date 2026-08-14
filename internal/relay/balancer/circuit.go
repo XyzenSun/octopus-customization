@@ -49,10 +49,21 @@ func getOrCreateEntry(key string) *circuitEntry {
 	return actual.(*circuitEntry)
 }
 
-// IsCircuitBreakerEnabled 读取熔断器全局开关
+// IsChannelCircuitBreakerEnabled 读取渠道级熔断器开关
 // err 或未设置时默认返回 true（向后兼容）
-func IsCircuitBreakerEnabled() bool {
+func IsChannelCircuitBreakerEnabled() bool {
 	v, err := op.SettingGetBool(model.SettingKeyCircuitBreakerEnabled)
+	if err != nil {
+		return true
+	}
+	return v
+}
+
+// IsKeyCircuitBreakerEnabled 读取 Key 级熔断器开关
+// 关闭后 Channel.GetChannelKey 不再跳过因上游 401/403/429/503 而冷却中的 Key
+// err 或未设置时默认返回 true（向后兼容）
+func IsKeyCircuitBreakerEnabled() bool {
+	v, err := op.SettingGetBool(model.SettingKeyKeyCircuitBreakerEnabled)
 	if err != nil {
 		return true
 	}
@@ -98,7 +109,7 @@ func GetCooldown(tripCount int) time.Duration {
 // IsTripped 检查通道是否处于熔断状态
 // 返回 tripped=true 表示该通道应被跳过，remaining 为剩余冷却时间
 func IsTripped(channelID, keyID int, modelName string) (tripped bool, remaining time.Duration) {
-	if !IsCircuitBreakerEnabled() {
+	if !IsChannelCircuitBreakerEnabled() {
 		return false, 0
 	}
 	key := circuitKey(channelID, keyID, modelName)
@@ -137,7 +148,7 @@ func IsTripped(channelID, keyID int, modelName string) (tripped bool, remaining 
 
 // RecordSuccess 记录成功，重置熔断器状态
 func RecordSuccess(channelID, keyID int, modelName string) {
-	if !IsCircuitBreakerEnabled() {
+	if !IsChannelCircuitBreakerEnabled() {
 		return
 	}
 	key := circuitKey(channelID, keyID, modelName)
@@ -162,7 +173,7 @@ func RecordSuccess(channelID, keyID int, modelName string) {
 
 // RecordFailure 记录失败，可能触发熔断
 func RecordFailure(channelID, keyID int, modelName string) {
-	if !IsCircuitBreakerEnabled() {
+	if !IsChannelCircuitBreakerEnabled() {
 		return
 	}
 	key := circuitKey(channelID, keyID, modelName)

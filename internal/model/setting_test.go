@@ -83,3 +83,38 @@ func TestRelayLogMemoryLogMaxDimidiateTimesValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestKeyCircuitBreakerEnabledDefaultAndValidate(t *testing.T) {
+	// 默认必须为 true：该开关是给既有的 Key 冷却行为加壳，默认关闭会让老用户升级后冷却静默失效
+	defaultValue := ""
+	for _, setting := range DefaultSettings() {
+		if setting.Key == SettingKeyKeyCircuitBreakerEnabled {
+			defaultValue = setting.Value
+			break
+		}
+	}
+	if defaultValue != "true" {
+		t.Fatalf("key circuit breaker default = %q, want true", defaultValue)
+	}
+
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{name: "enabled", value: "true"},
+		{name: "disabled", value: "false"},
+		{name: "empty", value: "", wantErr: true},
+		{name: "numeric boolean", value: "1", wantErr: true},
+		{name: "mixed case", value: "True", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setting := Setting{Key: SettingKeyKeyCircuitBreakerEnabled, Value: tt.value}
+			if err := setting.Validate(); (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %t", err, tt.wantErr)
+			}
+		})
+	}
+}

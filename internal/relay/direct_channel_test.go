@@ -518,7 +518,7 @@ func TestPrepareDirectChannelAttemptCircuitBreak(t *testing.T) {
 			t.Errorf("ChannelDel() error = %v", err)
 		}
 	})
-	key := channel.GetChannelKey()
+	key := channel.GetChannelKey(true)
 	for range 5 {
 		balancer.RecordFailure(channel.ID, key.ID, "model")
 	}

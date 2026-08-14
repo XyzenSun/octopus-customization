@@ -83,12 +83,8 @@ func TestChannelModel(
 	if err != nil {
 		return nil, err
 	}
-	// 合并渠道自定义 header
-	for _, h := range channel.CustomHeader {
-		if h.HeaderKey != "" {
-			req.Header.Set(h.HeaderKey, h.HeaderValue)
-		}
-	}
+	// 自定义 Header 最后应用，允许测试与实际转发使用相同的新增、覆盖、空值和删除语义。
+	ApplyCustomHeaders(req.Header, channel.CustomHeader)
 
 	// 发送
 	httpClient, err := ChannelHttpClient(channel)

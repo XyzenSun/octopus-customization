@@ -9,6 +9,10 @@ import (
 	"github.com/looplj/axonhub/llm/httpclient"
 )
 
+func customHeaderValue(value string) *string {
+	return &value
+}
+
 func TestApplyRequestOptionsMergesGroupAndChannel(t *testing.T) {
 	groupOverride := `{"temperature":0.2,"top_p":0.8,"metadata":{"source":"group"}}`
 	channelOverride := `{"temperature":0.7,"max_tokens":128}`
@@ -18,8 +22,8 @@ func TestApplyRequestOptionsMergesGroupAndChannel(t *testing.T) {
 			group: dbmodel.Group{
 				ParamOverride: &groupOverride,
 				CustomHeader: []dbmodel.CustomHeader{
-					{HeaderKey: "X-Group", HeaderValue: "group"},
-					{HeaderKey: "X-Shared", HeaderValue: "group"},
+					{HeaderKey: "X-Group", HeaderValue: customHeaderValue("group")},
+					{HeaderKey: "X-Shared", HeaderValue: customHeaderValue("group")},
 				},
 			},
 			metrics: &RelayMetrics{},
@@ -27,8 +31,8 @@ func TestApplyRequestOptionsMergesGroupAndChannel(t *testing.T) {
 		channel: &dbmodel.Channel{
 			ParamOverride: &channelOverride,
 			CustomHeader: []dbmodel.CustomHeader{
-				{HeaderKey: "x-shared", HeaderValue: "channel"},
-				{HeaderKey: "X-Channel", HeaderValue: "channel"},
+				{HeaderKey: "x-shared", HeaderValue: customHeaderValue("channel")},
+				{HeaderKey: "X-Channel", HeaderValue: customHeaderValue("channel")},
 			},
 		},
 	}
@@ -143,17 +147,17 @@ func TestApplyRequestOptionsChannelRestoresGroupNulledParam(t *testing.T) {
 	}
 }
 
-func TestApplyRequestOptionsKeepsSensitiveAuthenticationHeader(t *testing.T) {
+func TestApplyRequestOptionsAllowsSensitiveAuthenticationHeaderOverride(t *testing.T) {
 	attempt := &relayAttempt{
 		relayRun: &relayRun{
 			routeMode: routeModeGroup,
 			group: dbmodel.Group{CustomHeader: []dbmodel.CustomHeader{
-				{HeaderKey: "Authorization", HeaderValue: "group-token"},
+				{HeaderKey: "Authorization", HeaderValue: customHeaderValue("group-token")},
 			}},
 			metrics: &RelayMetrics{},
 		},
 		channel: &dbmodel.Channel{CustomHeader: []dbmodel.CustomHeader{
-			{HeaderKey: "authorization", HeaderValue: "channel-token"},
+			{HeaderKey: "authorization", HeaderValue: customHeaderValue("channel-token")},
 		}},
 	}
 	request := &httpclient.Request{Headers: http.Header{
@@ -162,8 +166,47 @@ func TestApplyRequestOptionsKeepsSensitiveAuthenticationHeader(t *testing.T) {
 
 	attempt.applyRequestOptions(request)
 
-	if request.Headers.Get("Authorization") != "Bearer upstream-key" {
-		t.Fatalf("authorization = %q", request.Headers.Get("Authorization"))
+	if request.Headers.Get("Authorization") != "channel-token" {
+		t.Fatalf("authorization = %q, want channel override", request.Headers.Get("Authorization"))
+	}
+}
+
+func TestApplyRequestOptionsCustomHeaderSupportsEmptyAndDelete(t *testing.T) {
+	emptyValue := ""
+	attempt := &relayAttempt{
+		relayRun: &relayRun{
+			routeMode: routeModeGroup,
+			group: dbmodel.Group{CustomHeader: []dbmodel.CustomHeader{
+				{HeaderKey: "X-Delete", HeaderValue: customHeaderValue("group-value")},
+				{HeaderKey: "X-Restore", HeaderValue: nil},
+			}},
+			metrics: &RelayMetrics{},
+		},
+		channel: &dbmodel.Channel{CustomHeader: []dbmodel.CustomHeader{
+			{HeaderKey: "x-delete", HeaderValue: nil},
+			{HeaderKey: "X-Restore", HeaderValue: customHeaderValue("channel-value")},
+			{HeaderKey: "X-Empty", HeaderValue: &emptyValue},
+			{HeaderKey: "Authorization", HeaderValue: nil},
+		}},
+	}
+	request := &httpclient.Request{Headers: http.Header{
+		"X-Delete":      []string{"original"},
+		"Authorization": []string{"Bearer upstream-key"},
+	}}
+
+	attempt.applyRequestOptions(request)
+
+	if _, exists := request.Headers["X-Delete"]; exists {
+		t.Fatalf("X-Delete should be absent: %#v", request.Headers)
+	}
+	if request.Headers.Get("X-Restore") != "channel-value" {
+		t.Fatalf("X-Restore = %q, want channel value", request.Headers.Get("X-Restore"))
+	}
+	if values, exists := request.Headers["X-Empty"]; !exists || len(values) != 1 || values[0] != "" {
+		t.Fatalf("X-Empty = %#v (exists=%t), want one explicit empty value", values, exists)
+	}
+	if _, exists := request.Headers["Authorization"]; exists {
+		t.Fatalf("Authorization should be removable by user configuration: %#v", request.Headers)
 	}
 }
 
@@ -175,13 +218,13 @@ func TestDirectChannelRequestOptionsIgnoreGroup(t *testing.T) {
 			routeMode: routeModeDirectChannel,
 			group: dbmodel.Group{
 				ParamOverride: &groupOverride,
-				CustomHeader:  []dbmodel.CustomHeader{{HeaderKey: "X-Group", HeaderValue: "group"}},
+				CustomHeader:  []dbmodel.CustomHeader{{HeaderKey: "X-Group", HeaderValue: customHeaderValue("group")}},
 			},
 			metrics: &RelayMetrics{},
 		},
 		channel: &dbmodel.Channel{
 			ParamOverride: &channelOverride,
-			CustomHeader:  []dbmodel.CustomHeader{{HeaderKey: "X-Channel", HeaderValue: "channel"}},
+			CustomHeader:  []dbmodel.CustomHeader{{HeaderKey: "X-Channel", HeaderValue: customHeaderValue("channel")}},
 		},
 	}
 	request := &httpclient.Request{

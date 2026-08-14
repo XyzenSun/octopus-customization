@@ -42,8 +42,8 @@ type BaseUrl struct {
 }
 
 type CustomHeader struct {
-	HeaderKey   string `json:"header_key"`
-	HeaderValue string `json:"header_value"`
+	HeaderKey   string  `json:"header_key"`
+	HeaderValue *string `json:"header_value"`
 }
 
 type ChannelKey struct {
@@ -115,7 +115,11 @@ func (c *Channel) GetBaseUrl() string {
 	return bestURL
 }
 
-func (c *Channel) GetChannelKey() ChannelKey {
+// GetChannelKey 从渠道的 Key 池中挑选累计成本最低的可用 Key。
+// keyCircuitEnabled 为 Key 级熔断器开关：开启时跳过因上游返回 401/403/429/503 而处于冷却期的 Key；
+// 关闭时不做冷却判断，仅按"已启用且非空"筛选。开关值由调用方从 setting 读取传入
+// （model 包不可依赖 op 包，否则形成循环导入）。
+func (c *Channel) GetChannelKey(keyCircuitEnabled bool) ChannelKey {
 	if c == nil || len(c.Keys) == 0 {
 		return ChannelKey{}
 	}
@@ -130,16 +134,18 @@ func (c *Channel) GetChannelKey() ChannelKey {
 		if !k.Enabled || k.ChannelKey == "" {
 			continue
 		}
-		// key 429限流 或 服务端 503 则冷却一分钟
-		if (k.StatusCode == 429 && k.LastUseTimeStamp > 0) || (k.StatusCode == 503 && k.LastUseTimeStamp > 0) {
-			if nowSec-k.LastUseTimeStamp < int64(1*time.Minute/time.Second) {
-				continue
+		if keyCircuitEnabled {
+			// key 429限流 或 服务端 503 则冷却一分钟
+			if (k.StatusCode == 429 && k.LastUseTimeStamp > 0) || (k.StatusCode == 503 && k.LastUseTimeStamp > 0) {
+				if nowSec-k.LastUseTimeStamp < int64(1*time.Minute/time.Second) {
+					continue
+				}
 			}
-		}
-		// key 401 或 403 禁止访问，冷却五分钟
-		if (k.StatusCode == 401 && k.LastUseTimeStamp > 0) || (k.StatusCode == 403 && k.LastUseTimeStamp > 0) {
-			if nowSec-k.LastUseTimeStamp < int64(5*time.Minute/time.Second) {
-				continue
+			// key 401 或 403 禁止访问，冷却五分钟
+			if (k.StatusCode == 401 && k.LastUseTimeStamp > 0) || (k.StatusCode == 403 && k.LastUseTimeStamp > 0) {
+				if nowSec-k.LastUseTimeStamp < int64(5*time.Minute/time.Second) {
+					continue
+				}
 			}
 		}
 		if !bestSet || k.TotalCost < bestCost {

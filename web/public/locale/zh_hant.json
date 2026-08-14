@@ -96,6 +96,16 @@
             "success": "複製成功",
             "failed": "複製失敗",
             "noContent": "無可複製內容"
+        },
+        "customHeaderEditor": {
+            "actionLabel": "Header 操作",
+            "set": "覆蓋/新增",
+            "empty": "設為空值",
+            "remove": "從上游請求中移除",
+            "valuePlaceholder": "在此輸入要覆蓋或新增的 Value",
+            "emptyDescription": "傳送該 Header，但值為空",
+            "removeDescription": "請求中不再包含該 Header",
+            "removeRule": "刪除此設定項"
         }
     },
     "home": {
@@ -183,9 +193,10 @@
         },
         "circuitBreaker": {
             "title": "熔斷器配置",
+            "channelSection": "渠道級熔斷器",
             "enabled": {
-                "label": "啟用熔斷器",
-                "hint": "關閉後所有通道不再進行熔斷檢查"
+                "label": "啟用渠道級熔斷",
+                "hint": "按 渠道+Key+模型 維度統計連續失敗；關閉後不再進行渠道級熔斷檢查"
             },
             "threshold": {
                 "label": "熔斷觸發閾值（連續失敗次數）",
@@ -198,6 +209,11 @@
             "maxCooldown": {
                 "label": "最大冷卻時間（秒）",
                 "placeholder": "請輸入最大冷卻時間"
+            },
+            "keySection": "Key 級熔斷器",
+            "keyEnabled": {
+                "label": "啟用 Key 級熔斷",
+                "hint": "上游返回 401/403 時冷卻該 Key 五分鐘，返回 429/503 時冷卻一分鐘；關閉後選 Key 不再跳過冷卻中的 Key"
             },
             "hint": "當渠道連續失敗達到閾值後觸發熔斷，冷卻時間按指數退避增長，上限為最大冷卻時間",
             "status": {
@@ -458,7 +474,6 @@
             "description": "設定分組層級的請求參數與請求頭；同名設定會被供應源層級覆蓋。",
             "customHeader": "自定義 Header",
             "headerKey": "Header Key",
-            "headerValue": "Header Value",
             "addHeader": "新增 Header",
             "removeHeader": "刪除 Header",
             "paramOverride": "參數覆蓋",
@@ -593,7 +608,6 @@
             "apiKey": "API Key",
             "customHeader": "自定義 Header",
             "customHeaderKey": "Header Key",
-            "customHeaderValue": "Header Value",
             "customHeaderAdd": "新增 Header",
             "channelProxy": "供應源代理",
             "channelProxyPlaceholder": "可選：僅對該供應源生效（覆蓋全域代理）",

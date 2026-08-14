@@ -11,6 +11,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/common/Toast';
+import {
+    CustomHeaderEditor,
+    createEditableCustomHeader,
+    normalizeCustomHeaders,
+    type EditableCustomHeader,
+} from '@/components/common/CustomHeaderEditor';
 import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw, X, Plus } from 'lucide-react';
@@ -29,7 +35,7 @@ export interface ChannelFormData {
     name: string;
     type: ChannelType;
     base_urls: Channel['base_urls'];
-    custom_header: Channel['custom_header'];
+    custom_header: EditableCustomHeader[];
     channel_proxy: string;
     param_override: string;
     keys: ChannelKeyFormItem[];
@@ -86,7 +92,7 @@ export function ChannelForm({
             return;
         }
         if (!formData.custom_header || formData.custom_header.length === 0) {
-            onFormDataChange({ ...formData, custom_header: [{ header_key: '', header_value: '' }] });
+            onFormDataChange({ ...formData, custom_header: [createEditableCustomHeader()] });
         }
     }, [formData, onFormDataChange]);
 
@@ -123,7 +129,7 @@ export function ChannelForm({
                 proxy: formData.proxy,
                 channel_proxy: formData.channel_proxy?.trim() || null,
                 match_regex: formData.match_regex.trim() || null,
-                custom_header: formData.custom_header?.filter((h) => h.header_key.trim()) || [],
+                custom_header: normalizeCustomHeaders(formData.custom_header ?? []),
             },
             {
                 onSuccess: (data) => {
@@ -201,24 +207,6 @@ export function ChannelForm({
         const curr = formData.base_urls ?? [];
         if (curr.length <= 1) return;
         onFormDataChange({ ...formData, base_urls: curr.filter((_, i) => i !== idx) });
-    };
-
-    const handleAddHeader = () => {
-        onFormDataChange({
-            ...formData,
-            custom_header: [...(formData.custom_header ?? []), { header_key: '', header_value: '' }],
-        });
-    };
-
-    const handleUpdateHeader = (idx: number, patch: Partial<Channel['custom_header'][number]>) => {
-        const next = (formData.custom_header ?? []).map((h, i) => (i === idx ? { ...h, ...patch } : h));
-        onFormDataChange({ ...formData, custom_header: next });
-    };
-
-    const handleRemoveHeader = (idx: number) => {
-        const curr = formData.custom_header ?? [];
-        if (curr.length <= 1) return;
-        onFormDataChange({ ...formData, custom_header: curr.filter((_, i) => i !== idx) });
     };
 
     return (
@@ -499,54 +487,14 @@ export function ChannelForm({
                             </div>
                         </div>
 
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <label className="text-sm font-medium text-card-foreground">
-                                    {t('customHeader')} {formData.custom_header.length > 0 ? `(${formData.custom_header.length})` : ''}
-                                </label>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={handleAddHeader}
-                                    className="h-6 px-2 text-xs text-muted-foreground/70 hover:text-muted-foreground hover:bg-transparent"
-                                >
-                                    <Plus className="h-3 w-3 mr-1" />
-                                    {t('customHeaderAdd')}
-                                </Button>
-                            </div>
-                            <div className="space-y-2">
-                                {(formData.custom_header ?? []).map((h, idx) => (
-                                    <div key={`hdr-${idx}`} className="flex items-center gap-2">
-                                        <Input
-                                            type="text"
-                                            value={h.header_key}
-                                            onChange={(e) => handleUpdateHeader(idx, { header_key: e.target.value })}
-                                            placeholder={t('customHeaderKey')}
-                                            className="rounded-xl flex-1"
-                                        />
-                                        <Input
-                                            type="text"
-                                            value={h.header_value}
-                                            onChange={(e) => handleUpdateHeader(idx, { header_value: e.target.value })}
-                                            placeholder={t('customHeaderValue')}
-                                            className="rounded-xl flex-1"
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleRemoveHeader(idx)}
-                                            disabled={(formData.custom_header ?? []).length <= 1}
-                                            className="h-8 w-8 p-0 rounded-xl text-muted-foreground hover:text-destructive hover:bg-transparent disabled:opacity-40"
-                                            title="Remove"
-                                        >
-                                            <X className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        <CustomHeaderEditor
+                            headers={formData.custom_header}
+                            onChange={(customHeader) => onFormDataChange({ ...formData, custom_header: customHeader })}
+                            label={t('customHeader')}
+                            addLabel={t('customHeaderAdd')}
+                            keyPlaceholder={t('customHeaderKey')}
+                            showCount
+                        />
 
                         <div className="space-y-2">
                             <label htmlFor={`${idPrefix}-match-regex`} className="text-sm font-medium text-card-foreground">

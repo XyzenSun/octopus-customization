@@ -96,6 +96,16 @@
             "success": "复制成功",
             "failed": "复制失败",
             "noContent": "无可复制内容"
+        },
+        "customHeaderEditor": {
+            "actionLabel": "Header 操作",
+            "set": "覆盖/新增",
+            "empty": "设为空值",
+            "remove": "从上游请求中删除",
+            "valuePlaceholder": "在此输入要覆盖或新增的 Value",
+            "emptyDescription": "发送该 Header，但值为空",
+            "removeDescription": "请求中不再包含该 Header",
+            "removeRule": "删除此配置项"
         }
     },
     "home": {
@@ -183,9 +193,10 @@
         },
         "circuitBreaker": {
             "title": "熔断器配置",
+            "channelSection": "渠道级熔断器",
             "enabled": {
-                "label": "启用熔断器",
-                "hint": "关闭后所有通道不再进行熔断检查"
+                "label": "启用渠道级熔断",
+                "hint": "按 渠道+Key+模型 维度统计连续失败；关闭后不再进行渠道级熔断检查"
             },
             "threshold": {
                 "label": "熔断触发阈值（连续失败次数）",
@@ -198,6 +209,11 @@
             "maxCooldown": {
                 "label": "最大冷却时间（秒）",
                 "placeholder": "请输入最大冷却时间"
+            },
+            "keySection": "Key 级熔断器",
+            "keyEnabled": {
+                "label": "启用 Key 级熔断",
+                "hint": "上游返回 401/403 时冷却该 Key 五分钟，返回 429/503 时冷却一分钟；关闭后选 Key 不再跳过冷却中的 Key"
             },
             "hint": "当渠道连续失败达到阈值后触发熔断，冷却时间按指数退避增长，上限为最大冷却时间",
             "status": {
@@ -458,7 +474,6 @@
             "description": "配置分组级请求参数与请求头；同名配置会被渠道级设置覆盖。",
             "customHeader": "自定义 Header",
             "headerKey": "Header Key",
-            "headerValue": "Header Value",
             "addHeader": "添加 Header",
             "removeHeader": "删除 Header",
             "paramOverride": "参数覆盖",
@@ -593,7 +608,6 @@
             "apiKey": "API Key",
             "customHeader": "自定义 Header",
             "customHeaderKey": "Header Key",
-            "customHeaderValue": "Header Value",
             "customHeaderAdd": "添加 Header",
             "channelProxy": "渠道代理",
             "channelProxyPlaceholder": "可选：仅对该渠道生效（覆盖全局代理）",

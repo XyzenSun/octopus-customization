@@ -10,6 +10,7 @@ import { useTranslations } from 'next-intl';
 import { ChannelForm, type ChannelFormData } from './Form';
 import { TestPanel } from './TestPanel';
 import { isValidParamOverride } from '@/components/common/validators';
+import { normalizeCustomHeaders } from '@/components/common/CustomHeaderEditor';
 
 export function CreateDialogContent() {
     const { setIsOpen } = useMorphingDialog();
@@ -42,9 +43,7 @@ export function CreateDialogContent() {
         const normalizedKeys = formData.keys
             .filter((k) => k.channel_key.trim())
             .map((k) => ({ enabled: k.enabled, channel_key: k.channel_key, remark: k.remark ?? '' }));
-        const normalizedHeaders = (formData.custom_header ?? [])
-            .map((h) => ({ header_key: h.header_key.trim(), header_value: h.header_value }))
-            .filter((h) => h.header_key && h.header_value !== '');
+        const normalizedHeaders = normalizeCustomHeaders(formData.custom_header ?? []);
 
         const channelProxy = formData.channel_proxy.trim();
         const paramOverride = formData.param_override.trim();

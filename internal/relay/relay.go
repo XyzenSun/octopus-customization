@@ -190,7 +190,7 @@ func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
 		return nil, nil
 	}
 
-	usedKey := channel.GetChannelKey()
+	usedKey := channel.GetChannelKey(balancer.IsKeyCircuitBreakerEnabled())
 	if usedKey.ChannelKey == "" {
 		r.iter.Skip(channel.ID, 0, channel.Name, "no available key")
 		return nil, nil
@@ -255,8 +255,7 @@ func (ra *relayAttempt) run() (bool, error) {
 	ra.usedKey.LastUseTimeStamp = time.Now().Unix()
 
 	if fwdErr == nil {
-		ra.usedKey.TotalCost += ra.metrics.Stats.InputCost + ra.metrics.Stats.OutputCost
-		op.ChannelKeyUpdate(ra.usedKey)
+		op.ChannelKeyUpdate(ra.usedKey, ra.metrics.Stats.InputCost+ra.metrics.Stats.OutputCost)
 
 		span.End(dbmodel.AttemptSuccess, "")
 		op.StatsChannelUpdate(ra.channel.ID, dbmodel.StatsMetrics{
@@ -273,7 +272,7 @@ func (ra *relayAttempt) run() (bool, error) {
 		return false, fwdErr
 	}
 
-	op.ChannelKeyUpdate(ra.usedKey)
+	op.ChannelKeyUpdate(ra.usedKey, 0)
 	span.End(dbmodel.AttemptFailed, fwdErr.Error())
 	op.StatsChannelUpdate(ra.channel.ID, dbmodel.StatsMetrics{
 		WaitTime:      span.Duration().Milliseconds(),
@@ -427,17 +426,13 @@ func (ra *relayAttempt) applyRequestOptions(outboundRequest *httpclient.Request)
 		}
 	}
 
-	for _, header := range ra.mergedCustomHeaders() {
-		// pipeline 在 raw request middleware 前已经写入 Auth；同名敏感头保持认证配置优先，延续旧 BuildHttpRequest 的覆盖顺序。
-		if outboundRequest.Headers.Get(header.HeaderKey) != "" && httpclient.IsSensitiveHeader(header.HeaderKey) {
-			continue
-		}
-		outboundRequest.Headers.Set(header.HeaderKey, header.HeaderValue)
-	}
+	// 自定义 Header 在 pipeline 完成认证配置后应用，所以既能覆盖/删除普通 Header，
+	// 也能按用户配置覆盖/删除 Authorization 等认证 Header。
+	helper.ApplyCustomHeaders(outboundRequest.Headers, ra.mergedCustomHeaders())
 }
 
 // applyParamOverride 把 override 的顶层键合并进请求体。
-//  RFC 7386（JSON Merge Patch）：值为 JSON null 表示删除该参数，
+// RFC 7396（JSON Merge Patch）：值为 JSON null 表示删除该参数，
 // 其余值（含 0/false/""/[]/{}）都是正常的参数值，照常覆盖。
 func applyParamOverride(bodyMap, override map[string]any) {
 	for key, value := range override {

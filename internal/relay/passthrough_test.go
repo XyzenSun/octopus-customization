@@ -117,7 +117,7 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 
 	withHeader := *base
 	channelWithHeader := *base.channel
-	channelWithHeader.CustomHeader = []dbmodel.CustomHeader{{HeaderKey: "X-Custom", HeaderValue: "value"}}
+	channelWithHeader.CustomHeader = []dbmodel.CustomHeader{{HeaderKey: "X-Custom", HeaderValue: customHeaderValue("value")}}
 	withHeader.channel = &channelWithHeader
 	if withHeader.canPassthrough() {
 		t.Fatal("channel custom header must use transformed path")
@@ -158,7 +158,7 @@ func TestRelayAttemptCanPassthrough(t *testing.T) {
 		routeMode:          routeModeGroup,
 		passthroughEnabled: true,
 		group: dbmodel.Group{CustomHeader: []dbmodel.CustomHeader{
-			{HeaderKey: "X-Group", HeaderValue: "value"},
+			{HeaderKey: "X-Group", HeaderValue: customHeaderValue("value")},
 		}},
 	}
 	if withGroupHeader.canPassthrough() {

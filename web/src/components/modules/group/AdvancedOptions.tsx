@@ -1,10 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import type { CustomHeader } from '@/api/endpoints/channel';
 import { Button } from '@/components/ui/button';
+import {
+    CustomHeaderEditor,
+    createEditableCustomHeaders,
+    normalizeCustomHeaders,
+    type EditableCustomHeader,
+} from '@/components/common/CustomHeaderEditor';
 import {
     MorphingDialog,
     MorphingDialogClose,
@@ -15,7 +20,6 @@ import {
     MorphingDialogTrigger,
     useMorphingDialog,
 } from '@/components/ui/morphing-dialog';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 export type GroupRequestOptions = {
@@ -23,20 +27,14 @@ export type GroupRequestOptions = {
     param_override: string;
 };
 
-function editableHeaders(headers: CustomHeader[]) {
-    return headers.length > 0
-        ? headers.map((header) => ({ ...header }))
-        : [{ header_key: '', header_value: '' }];
-}
+type GroupRequestOptionsDraft = {
+    custom_header: EditableCustomHeader[];
+    param_override: string;
+};
 
-export function normalizeGroupRequestOptions(options: GroupRequestOptions): GroupRequestOptions {
+function normalizeGroupRequestOptions(options: GroupRequestOptionsDraft): GroupRequestOptions {
     return {
-        custom_header: options.custom_header
-            .map((header) => ({
-                header_key: header.header_key.trim(),
-                header_value: header.header_value,
-            }))
-            .filter((header) => header.header_key && header.header_value !== ''),
+        custom_header: normalizeCustomHeaders(options.custom_header),
         param_override: options.param_override.trim(),
     };
 }
@@ -88,31 +86,10 @@ function AdvancedOptionsContent({
 }) {
     const t = useTranslations('group');
     const { setIsOpen } = useMorphingDialog();
-    const [draft, setDraft] = useState<GroupRequestOptions>(() => ({
-        custom_header: editableHeaders(value.custom_header),
+    const [draft, setDraft] = useState<GroupRequestOptionsDraft>(() => ({
+        custom_header: createEditableCustomHeaders(value.custom_header),
         param_override: value.param_override,
     }));
-
-    const updateHeader = (index: number, patch: Partial<CustomHeader>) => {
-        setDraft((current) => ({
-            ...current,
-            custom_header: current.custom_header.map((header, currentIndex) => (
-                currentIndex === index ? { ...header, ...patch } : header
-            )),
-        }));
-    };
-
-    const removeHeader = (index: number) => {
-        setDraft((current) => {
-            if (current.custom_header.length <= 1) {
-                return { ...current, custom_header: [{ header_key: '', header_value: '' }] };
-            }
-            return {
-                ...current,
-                custom_header: current.custom_header.filter((_, currentIndex) => currentIndex !== index),
-            };
-        });
-    };
 
     const closeDialog = () => setIsOpen(false);
 
@@ -133,58 +110,13 @@ function AdvancedOptionsContent({
             </MorphingDialogTitle>
 
             <MorphingDialogDescription disableLayoutAnimation className="space-y-5">
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-card-foreground">
-                            {t('advanced.customHeader')}
-                        </label>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDraft((current) => ({
-                                ...current,
-                                custom_header: [
-                                    ...current.custom_header,
-                                    { header_key: '', header_value: '' },
-                                ],
-                            }))}
-                            className="h-6 px-2 text-xs text-muted-foreground/70 hover:bg-transparent hover:text-muted-foreground"
-                        >
-                            <Plus className="mr-1 size-3" />
-                            {t('advanced.addHeader')}
-                        </Button>
-                    </div>
-
-                    <div className="space-y-2">
-                        {draft.custom_header.map((header, index) => (
-                            <div key={`group-header-${index}`} className="flex items-center gap-2">
-                                <Input
-                                    value={header.header_key}
-                                    onChange={(event) => updateHeader(index, { header_key: event.target.value })}
-                                    placeholder={t('advanced.headerKey')}
-                                    className="flex-1 rounded-xl"
-                                />
-                                <Input
-                                    value={header.header_value}
-                                    onChange={(event) => updateHeader(index, { header_value: event.target.value })}
-                                    placeholder={t('advanced.headerValue')}
-                                    className="flex-1 rounded-xl"
-                                />
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => removeHeader(index)}
-                                    className="h-8 w-8 rounded-xl p-0 text-muted-foreground hover:bg-transparent hover:text-destructive"
-                                    aria-label={t('advanced.removeHeader')}
-                                >
-                                    <X className="size-4" />
-                                </Button>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+                <CustomHeaderEditor
+                    headers={draft.custom_header}
+                    onChange={(customHeader) => setDraft((current) => ({ ...current, custom_header: customHeader }))}
+                    label={t('advanced.customHeader')}
+                    addLabel={t('advanced.addHeader')}
+                    keyPlaceholder={t('advanced.headerKey')}
+                />
 
                 <div className="space-y-2">
                     <label htmlFor="group-param-override" className="text-sm font-medium text-card-foreground">

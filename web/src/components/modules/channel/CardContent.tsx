@@ -28,6 +28,10 @@ import { formatMoney } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { isValidParamOverride } from '@/components/common/validators';
+import {
+    createEditableCustomHeaders,
+    normalizeCustomHeaders,
+} from '@/components/common/CustomHeaderEditor';
 
 export function CardContent({ channel, stats }: { channel: Channel; stats: StatsMetricsFormatted }) {
     const { setIsOpen } = useMorphingDialog();
@@ -40,7 +44,7 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         type: channel.type,
         enabled: channel.enabled,
         base_urls: channel.base_urls?.length ? channel.base_urls : [{ url: '', delay: 0 }],
-        custom_header: channel.custom_header ?? [],
+        custom_header: createEditableCustomHeaders(channel.custom_header),
         channel_proxy: channel.channel_proxy ?? '',
         param_override: channel.param_override ?? '',
         keys: channel.keys.length > 0
@@ -68,8 +72,6 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
 
     const baseUrlsEqual = (a: Channel['base_urls'] | undefined, b: Channel['base_urls'] | undefined) =>
         JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
-    const headersEqual = (a: Channel['custom_header'] | undefined, b: Channel['custom_header'] | undefined) =>
-        JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
 
     const handleUpdate = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -91,10 +93,9 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
         if (formData.auto_sync !== channel.auto_sync) req.auto_sync = formData.auto_sync;
         if (formData.auto_group !== channel.auto_group) req.auto_group = formData.auto_group;
 
-        if (!headersEqual(formData.custom_header, channel.custom_header)) {
-            req.custom_header = (formData.custom_header ?? [])
-                .map((h) => ({ header_key: h.header_key.trim(), header_value: h.header_value }))
-                .filter((h) => h.header_key && h.header_value !== '');
+        const nextCustomHeaders = normalizeCustomHeaders(formData.custom_header ?? []);
+        if (JSON.stringify(nextCustomHeaders) !== JSON.stringify(channel.custom_header ?? [])) {
+            req.custom_header = nextCustomHeaders;
         }
 
         const nextChannelProxy = formData.channel_proxy.trim();
