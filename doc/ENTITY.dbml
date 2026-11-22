@@ -1,0 +1,272 @@
+// 本文件替代 ENTITY.md, 集中维护持久化实体结构. Go 模型和迁移继续负责实际建表.
+// 跨驱动使用逻辑类型, 避免将某个驱动的 DDL 误当作 SQLite/MySQL/PostgreSQL 的共同结构.
+Project Octopus {
+  Note: '''
+    Octopus 数据库实体. 来源: internal/model/*.go, internal/db/db.go 和 internal/db/migrate/*.go.
+    包含 AutoMigrate 注册的 16 张表, 使用 GORM 默认的 snake_case 列名和复数表名.
+    支持 SQLite, MySQL 和 PostgreSQL; 本文件未限定数据库版本, 不作为可直接执行的迁移脚本.
+
+    integer 表示 Go int/uint, bigint 表示 Go int64, float 表示 Go float64; real 保留显式 GORM 类型.
+    Go int/uint 的宽度取决于构建架构, MySQL 的 uint 使用 unsigned, PostgreSQL 由驱动映射.
+    text 表示字符串存储; MySQL 根据主键和索引映射为 varchar(191) 或 longtext, 其他驱动按自身规则处理.
+    float 保留现有 Go 数值类型, 不新增金额精度或币种规则; PostgreSQL 驱动默认映射为 decimal.
+    serializer:json 使用字符串列存储 JSON, 不声明为原生 JSON/JSONB 列.
+
+    仅主键和显式 not null 字段标记非空. Go 非指针字段不等于数据库 NOT NULL.
+    单列整数主键沿用 GORM 默认自增行为, RelayLog.ID 显式关闭自增; 统计维度和迁移版本由应用赋值.
+    Ref 只描述 GORM 已声明的数据库关联, 业务引用写入字段 note; 不新增外键、CHECK 或级联行为.
+    JSON 值对象写入字段 note, 公共嵌入字段使用 TablePartial, 均不独立建表.
+  '''
+}
+
+// 请求选项同时用于渠道和分组, 共用定义以保持 CustomHeader 的 JSON 结构一致.
+TablePartial RequestOptions {
+  custom_header text [note: '''
+    自定义请求头, serializer:json 存储 []CustomHeader.
+    CustomHeader 值对象: header_key string, header_value string|null (Go *string).
+    header_value 为 null 时删除同名请求头, 空字符串表示设置空值; 值对象不独立建表.
+  ''']
+  param_override text [null, note: '请求参数覆盖, Go *string, 存储 JSON 对象字符串, 仅作用于 JSON 请求体. 顶层 null 值用于删除对应参数.']
+}
+
+// StatsMetrics 的字段会展开到各统计表, 无独立的 stats_metrics 表.
+TablePartial StatsMetrics {
+  input_token bigint [note: '累计输入 Token 数. Go int64.']
+  output_token bigint [note: '累计输出 Token 数. Go int64.']
+  input_cost real [note: '累计输入费用, 包含普通输入和缓存费用. Go float64, GORM type:real.']
+  output_cost real [note: '累计输出费用. Go float64, GORM type:real.']
+  wait_time bigint [note: '累计请求耗时, 单位毫秒, 用于计算平均耗时. Go int64.']
+  request_success bigint [note: '成功请求数. Go int64.']
+  request_failed bigint [note: '失败请求数. Go int64.']
+}
+
+Table channels {
+  id integer [pk, increment, note: '渠道主键. Go int.']
+  name text [not null, unique, note: '渠道名称, 全局唯一; 指定渠道直连使用此名称作为请求模型前缀.']
+  type text [note: '渠道协议, Go llm.APIFormat. 包括 openai/chat_completions, openai/responses, anthropic/messages, gemini/contents, doubao, openai/embeddings; 字符串存储, 无数据库枚举约束.']
+  enabled boolean [default: true, note: '是否启用渠道.']
+  base_urls text [note: '''
+    基础 URL 列表及延迟信息, serializer:json 存储 []BaseUrl.
+    BaseUrl 值对象: url string (Go URL), delay integer (Go Delay, 单位毫秒).
+    选择非空 URL 中延迟最低的一项; 值对象不独立建表.
+  ''']
+  model text [note: '渠道模型列表, 逗号分隔.']
+  custom_model text [note: '自定义模型列表, 逗号分隔.']
+  proxy boolean [default: false, note: '是否启用代理; 启用时优先使用非空的渠道专属代理, 否则使用全局代理. 关闭时直连.']
+  auto_sync boolean [default: false, note: '是否自动同步渠道模型.']
+  auto_group integer [default: 0, note: 'Go AutoGroupType: 0=None 不自动分组, 1=Fuzzy 模糊匹配, 2=Exact 精确匹配, 3=Regex 正则匹配. 无数据库枚举约束.']
+  ~RequestOptions
+  channel_proxy text [null, note: '渠道专属代理地址. Go *string.']
+  match_regex text [null, note: '模型匹配正则表达式. Go *string.']
+
+  Note: '''
+    渠道, 对应 model.Channel, 源码 internal/model/channel.go.
+    Keys 是 []ChannelKey 关联, Stats 是可选的 *StatsChannel 关联, 均无对应实体列.
+    分组路由先应用分组请求选项, 再由渠道请求选项覆盖同名项; 指定渠道直连只应用渠道请求选项.
+  '''
+}
+
+Table channel_keys {
+  id integer [pk, increment, note: '渠道密钥主键.']
+  channel_id integer [note: '所属渠道 ID, 由 Channel.Keys 声明外键; 源码未声明 NOT NULL.']
+  enabled boolean [default: true, note: '是否启用密钥.']
+  channel_key text [note: '上游认证密钥字符串.']
+  status_code integer [note: '最近一次请求状态码.']
+  last_use_time_stamp bigint [note: '最近使用时间, Unix 时间戳, 单位秒.']
+  total_cost float [note: '累计消耗费用. Go float64.']
+  remark text [note: '密钥备注.']
+
+  Note: '渠道密钥, 对应 model.ChannelKey, 源码 internal/model/channel.go. 一个渠道可配置多个密钥.'
+}
+
+Table groups {
+  id integer [pk, increment, note: '分组主键.']
+  name text [not null, unique, note: '分组名称, 全局唯一; 客户端请求模型精确命中此名称时使用分组路由.']
+  mode integer [not null, note: 'Go GroupMode: 1=RoundRobin 轮询, 2=Random 随机, 3=Failover 故障转移, 4=Weighted 加权分配. 无数据库枚举约束.']
+  match_regex text [note: '模型匹配正则表达式.']
+  first_token_time_out integer [note: '单个渠道首 Token 响应超时, 单位秒.']
+  session_keep_time integer [note: '会话保持时间, 单位秒; 0 表示禁用.']
+  ~RequestOptions
+
+  Note: '分组, 对应 model.Group, 源码 internal/model/group.go. Items 是 []GroupItem 关联, 不作为列存储.'
+}
+
+Table group_items {
+  id integer [pk, increment, note: '分组项主键.']
+  group_id integer [not null, note: '所属分组 ID, 由 Group.Items 声明外键.']
+  channel_id integer [not null, note: '业务引用 channels.id; 当前模型未声明到渠道的数据库外键.']
+  model_name text [not null, note: '分组项选择的实际模型; 可来自渠道模型列表, 不要求存在于 llm_infos, 无模型价格外键.']
+  priority integer [note: '故障转移模式使用的优先级.']
+  weight integer [note: '加权模式使用的权重.']
+
+  indexes {
+    (group_id, channel_id, model_name) [unique, name: 'idx_group_channel_model', note: '同一分组中的渠道和模型组合唯一, 顺序沿用 GORM 字段声明.']
+  }
+
+  Note: '分组项, 对应 model.GroupItem, 源码 internal/model/group.go. 连接分组与渠道模型, 渠道关联由应用层维护.'
+}
+
+Table api_keys {
+  id integer [pk, increment, note: 'API Key 主键.']
+  name text [not null, note: 'API Key 名称; 当前模型未声明唯一约束.']
+  api_key text [not null, note: '客户端访问本服务的 API Key 字符串; 当前模型未声明唯一约束.']
+  enabled boolean [default: true, note: '是否启用.']
+  expire_at bigint [note: '过期时间, Unix 时间戳, 单位秒; 0 表示永不过期.']
+  max_cost float [note: '最大消费额度; 0 表示无限制. Go float64.']
+  supported_models text [note: '允许使用的请求模型, 逗号分隔且精确匹配; 空字符串表示不限制. 受限 API Key 不允许指定渠道直连.']
+
+  Note: 'API 密钥, 对应 model.APIKey, 源码 internal/model/apikey.go. 与渠道上游密钥分开管理.'
+}
+
+Table users {
+  id integer [pk, increment, note: '用户主键. Go uint, MySQL 使用 unsigned 整数.']
+  username text [unique, note: '用户名, 全局唯一; 当前模型未声明 NOT NULL.']
+  password text [not null, note: 'bcrypt 密码哈希, 不存储明文密码.']
+  two_factor_secret text [note: '两步验证 TOTP 密钥, 开关存储于 settings.two_factor_enabled 对应设置行.']
+
+  Note: '管理用户, 对应 model.User, 源码 internal/model/user.go. two_factor_secret 由版本 5 迁移补齐旧表.'
+}
+
+Table settings {
+  key text [pk, note: '设置项键名, Go SettingKey 字符串; 预定义键由应用维护, 无数据库枚举约束.']
+  value text [not null, note: '设置值统一以字符串保存, 由调用方解析和 Validate 校验; 各设置项默认值是初始化数据, 无列 DEFAULT.']
+
+  Note: '''
+    运行期系统设置, 对应 model.Setting, 源码 internal/model/setting.go; 与启动配置分开管理.
+    以下是 DefaultSettings 的初始化值, 不代表字段或数据库列默认值:
+    proxy_url = 空字符串: 全局代理 URL, 支持 http/https/socks5.
+    stats_save_interval = 10: 统计落库周期, 单位分钟.
+    model_info_update_interval = 24: 模型信息更新周期, 单位小时.
+    sync_llm_interval = 24: 渠道模型同步周期, 单位小时.
+    relay_log_keep_period = 7: 日志保留天数.
+    relay_log_keep_enabled = true: 是否保留历史日志.
+    relay_log_flush_size = 50: 持久化日志刷写上限, 单位条.
+    relay_log_memory_cache_size = 100: 仅内存模式缓存上限, 单位条.
+    relay_log_max_content_size_mb = 2: 单条日志请求和响应正文合计上限, 单位 MiB; -1 表示无限制.
+    relay_log_memory_log_max_dimidiate_times = 15: 折半 GC 触发次数; -1 关闭, 其他值必须是正整数.
+    cors_allow_origins = *: 逗号分隔的允许来源; 空字符串禁止跨域, * 允许全部来源.
+    circuit_breaker_threshold = 5: 渠道级熔断连续失败阈值.
+    circuit_breaker_cooldown = 60: 渠道级熔断基础冷却秒数.
+    circuit_breaker_max_cooldown = 600: 渠道级熔断最大冷却秒数.
+    circuit_breaker_enabled = true: 渠道级熔断开关.
+    key_circuit_breaker_enabled = true: Key 级熔断开关.
+    passthrough_enabled = false: 协议直通开关, 不改变路由方式.
+    two_factor_enabled = false: TOTP 两步验证开关, 密钥另存于 users.two_factor_secret.
+
+    布尔开关仅接受 true/false; 正文上限仅接受大于等于 -1 的整数.
+    其他数值校验按 Validate 实际分支执行, 不在数据库中补充 CHECK.
+  '''
+}
+
+Table llm_infos {
+  name text [pk, not null, note: '模型名称主键.']
+  input float [note: '普通输入单价, 每百万 Token. Go float64.']
+  output float [note: '输出单价, 每百万 Token. Go float64.']
+  cache_read float [note: '缓存读取单价, 每百万 Token. Go float64.']
+  cache_write float [note: '缓存写入单价, 每百万 Token. Go float64.']
+
+  Note: '模型价格, 对应 model.LLMInfo, 源码 internal/model/llm.go. LLMPrice 嵌入为四个价格列, 不独立建表. 费用按 Token 数乘单价再乘 1e-6 计算.'
+}
+
+Table relay_logs {
+  id bigint [pk, note: 'Snowflake ID, 由应用生成; GORM autoIncrement:false.']
+  time bigint [note: '请求开始时间, Unix 时间戳, 单位秒.']
+  request_model_name text [note: '请求模型, 指定渠道直连时包含渠道名称前缀.']
+  request_api_key_name text [note: '请求 API Key 名称快照, 无 API Key 外键.']
+  channel_id integer [note: '最终渠道 ID, Go 字段 ChannelId, JSON 键为 channel; 0 表示没有实际渠道, 无数据库外键.']
+  channel_name text [note: '渠道名称快照.']
+  actual_model_name text [note: '路由选定的实际模型快照, 指定渠道直连时不含渠道前缀; 参数覆盖改写 model 时, 此字段不保证与最终上游请求体一致.']
+  input_tokens integer [note: '输入 Token 数.']
+  output_tokens integer [note: '输出 Token 数.']
+  ftut integer [note: '首 Token 用时, 单位毫秒, First Token Use Time.']
+  use_time integer [note: '请求总用时, 单位毫秒.']
+  cost float [note: '本次请求总费用. Go float64.']
+  request_content text [note: '审计请求正文, 基于内部请求序列化并应用实际参数覆盖, 不保证等同原始入站 body.']
+  response_content text [note: '实际写回客户端或流式聚合后的响应正文.']
+  error text [note: '错误信息.']
+  attempts text [note: '''
+    所有渠道尝试记录, serializer:json 存储 []ChannelAttempt, 不独立建表.
+    ChannelAttempt 值对象, 字段名沿用 JSON 键:
+    channel_id integer: 渠道 ID, Go ChannelID.
+    channel_key_id integer: 渠道密钥 ID, Go ChannelKeyID, omitempty.
+    channel_name string: 渠道名称.
+    model_name string: 此次尝试选定的模型快照; 不记录参数覆盖对 model 的后续改写.
+    attempt_num integer: 尝试序号.
+    status string: Go AttemptStatus, success=成功, failed=失败, circuit_break=熔断跳过, skipped=其他原因跳过.
+    duration integer: 耗时毫秒.
+    sticky boolean: 是否命中会话保持, omitempty.
+    msg string: 错误或跳过原因, omitempty.
+    ID 和名称作为审计快照保存, JSON 内不建立数据库外键, omitempty 只影响 JSON 输出.
+  ''']
+  total_attempts integer [note: '总尝试次数.']
+
+  Note: '''
+    转发日志, 对应 model.RelayLog, 源码 internal/model/log.go.
+    保留天数由 relay_log_keep_period 控制; relay_log_keep_enabled=false 时仅使用内存缓存.
+    单条正文超过 relay_log_max_content_size_mb 时跳过保存; 缓存和刷写策略由对应 Setting 控制.
+    保留渠道、模型和密钥名称快照, 不新增会阻止历史日志保留的数据库外键.
+  '''
+}
+
+Table stats_totals {
+  id integer [pk, increment, note: '全局累计统计主键, 应用使用固定 ID.']
+  ~StatsMetrics
+
+  Note: '全局累计统计, 对应 model.StatsTotal, 源码 internal/model/stats.go. 单行使用方式由应用维护, 无数据库单行约束.'
+}
+
+Table stats_dailies {
+  date text [pk, note: '日期主键, 格式 YYYYMMDD, Go 格式串 20060102.']
+  ~StatsMetrics
+
+  Note: '按日统计, 对应 model.StatsDaily, 源码 internal/model/stats.go. 表名沿用 GORM 复数化规则.'
+}
+
+Table stats_hourlies {
+  hour integer [pk, increment, note: '小时维度, 应用使用 0-23; 源码未关闭 GORM 默认自增, 无数据库范围 CHECK.']
+  date text [not null, note: '当前数据所属日期, 格式 YYYYMMDD, Go 格式串 20060102.']
+  ~StatsMetrics
+
+  Note: '滚动小时统计, 对应 model.StatsHourly, 源码 internal/model/stats.go. 相同小时跨天复用, date 用于识别日期; 主键为 hour, 非 (date, hour).'
+}
+
+Table stats_models {
+  id integer [pk, increment, note: '模型统计主键.']
+  name text [not null, note: '统计模型名称, 无 llm_infos 外键.']
+  channel_id integer [not null, note: '业务引用 channels.id; 当前模型未声明数据库外键.']
+  ~StatsMetrics
+
+  Note: '模型统计, 对应 model.StatsModel, 源码 internal/model/stats.go. 按渠道与模型区分, 当前模型未声明 (channel_id, name) 联合唯一约束.'
+}
+
+Table stats_channels {
+  channel_id integer [pk, increment, note: '渠道统计主键和渠道外键, 由应用使用渠道 ID 赋值; 源码未关闭 GORM 默认自增.']
+  ~StatsMetrics
+
+  Note: '渠道统计, 对应 model.StatsChannel, 源码 internal/model/stats.go. 由 Channel.Stats 声明一对一关联; 一个渠道至多一条统计记录.'
+}
+
+Table stats_api_keys {
+  api_key_id integer [pk, increment, note: 'API Key 统计主键, 由应用使用 API Key ID 赋值; 源码未关闭 GORM 默认自增, 无数据库外键.']
+  ~StatsMetrics
+
+  Note: 'API Key 统计, 对应 model.StatsAPIKey, 源码 internal/model/stats.go. 业务上与 api_keys 一对一, 当前模型未声明数据库关联.'
+}
+
+Table migration_records {
+  version integer [pk, increment, note: '迁移版本, 由应用赋值; 源码未关闭 GORM 默认自增.']
+  status integer [note: 'Go MigrationRecordStatus: 1=Success 成功, 2=Failed 失败. 无数据库枚举约束.']
+
+  Note: '''
+    内部迁移记录, 对应 migrate.MigrationRecord, 源码 internal/db/migrate/migrate.go.
+    成功版本启动时跳过, 失败版本可重试. 当前迁移版本为 1-5.
+    BeforeAutoMigrate: 3 渠道协议数字转字符串, 4 分组请求选项, 5 用户 TOTP 密钥.
+    AfterAutoMigrate: 1 渠道密钥和基础 URL 数据迁移, 2 删除旧渠道列.
+  '''
+}
+
+// 外键名称沿用 GORM 默认关系命名, 不推断源码未声明的 ON DELETE/ON UPDATE 行为.
+Ref fk_channels_keys: channel_keys.channel_id > channels.id
+Ref fk_groups_items: group_items.group_id > groups.id
+// 独立一对一 Ref 的第二个字段是外键, 此顺序确保外键位于 stats_channels.
+Ref fk_channels_stats: channels.id - stats_channels.channel_id
