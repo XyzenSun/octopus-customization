@@ -798,7 +798,6 @@ model CustomHeader {
 }
 
 @doc("宽松自定义请求头输入, 没有 required binding, 遗漏或 null 进入 Go 零值, 未知字段允许.")
-@extension("additionalProperties", true)
 union CustomHeaderInput {
   {
     header_key?: string | null,
@@ -889,7 +888,6 @@ model Setting {
 }
 
 @doc("宽松 Setting 输入, key 和 value 没有 required binding, 遗漏或 null 进入 Go 字符串零值. /set 再执行按 key 校验和缓存存在性检查, 导入则不调用 Validate. 预定义键, 默认和校验见 Setting, 此 schema 不把它们作为导入约束.")
-@extension("additionalProperties", true)
 union SettingInput {
   {
     key?: string | null,
@@ -927,7 +925,6 @@ model DBDump {
 }
 
 @doc("宽松增量导入对象. 无 required, 未知字段允许并被 Go JSON 解码忽略, JSON null 或 {} 可走空导入. version 缺失或 null 成为 0, 仅 0 或 1 被业务接受, 其他版本返回 400, 此处以描述记录版本校验而不把导出 const 复用于输入. exported_at 若提供必须能被 Go time.Time 解码, 可遗漏或为 null, 未用于恢复逻辑. 数组遗漏, null 或 [] 都表示无对应行. include 标志缺失或 null 默认为 false, 只有相应标志为 true 才处理顶层日志或统计. 不调用实体创建校验或 Setting.Validate, 不强制枚举, 非负数或日期业务规则. 整数仍必须符合对应 Go 类型解析范围. Source: internal/server/handlers/setting.go:153-186; internal/model/backup.go:7-28; internal/op/backup.go:79-175.")
-@extension("additionalProperties", true)
 union DBDumpInput {
   {
     @doc("业务接受 0 或 1, 缺失或 null 进入 0, 其他值返回 400.")
@@ -1012,7 +1009,6 @@ model LatestInfo {
 }
 
 @doc("DBDump.channel_keys 的宽松输入, 不复用严格输出 required. 遗漏或 null 进入 Go 零值, 未知字段允许. default:true 与关联写入的精确 GORM 行为未做依赖或运行验证. Source: internal/model/channel.go:49-57.")
-@extension("additionalProperties", true)
 union ChannelKeyImport {
   {
     id?: integer | null,
@@ -1031,7 +1027,6 @@ union ChannelKeyImport {
 }
 
 @doc("DBDump.group_items 的宽松输入, 不执行分组创建或增量更新请求的 required 校验, 数据库约束仍可能使事务失败. Source: internal/model/group.go:24-30.")
-@extension("additionalProperties", true)
 union GroupItemImport {
   {
     id?: integer | null,
@@ -1045,7 +1040,6 @@ union GroupItemImport {
 }
 
 @doc("DBDump 统计指标宽松输入, 无 required 或非负约束. null 或遗漏的标量进入零值, 未知字段允许.")
-@extension("additionalProperties", true)
 union StatsMetricsInput {
   {
     input_token?: int64 | null,
@@ -1060,7 +1054,6 @@ union StatsMetricsInput {
 }
 
 @doc("宽松日统计输入, 不校验 date 格式, 按 date upsert.")
-@extension("additionalProperties", true)
 union StatsDailyInput {
   {
     input_token?: int64 | null,
@@ -1076,7 +1069,6 @@ union StatsDailyInput {
 }
 
 @doc("宽松小时统计输入, 不校验 hour 为 0 到 23 或 date 格式, 仅按 hour upsert.")
-@extension("additionalProperties", true)
 union StatsHourlyInput {
   {
     input_token?: int64 | null,
@@ -1093,7 +1085,6 @@ union StatsHourlyInput {
 }
 
 @doc("宽松全局统计输入, 规范字段为大写 ID, Go JSON 解码也可能按大小写不敏感匹配输入名. 按数据库 id upsert.")
-@extension("additionalProperties", true)
 union StatsTotalInput {
   {
     input_token?: int64 | null,
@@ -1109,7 +1100,6 @@ union StatsTotalInput {
 }
 
 @doc("宽松模型统计输入, 不要求名称或关联 ID, 按 id upsert, 数据库约束仍可失败.")
-@extension("additionalProperties", true)
 union StatsModelInput {
   {
     input_token?: int64 | null,
@@ -1127,7 +1117,6 @@ union StatsModelInput {
 }
 
 @doc("宽松渠道统计输入, 按 channel_id upsert.")
-@extension("additionalProperties", true)
 union StatsChannelInput {
   {
     input_token?: int64 | null,
@@ -1143,7 +1132,6 @@ union StatsChannelInput {
 }
 
 @doc("宽松 API Key 统计输入, 按 api_key_id upsert.")
-@extension("additionalProperties", true)
 union StatsAPIKeyInput {
   {
     input_token?: int64 | null,
@@ -1159,7 +1147,6 @@ union StatsAPIKeyInput {
 }
 
 @doc("宽松导入尝试记录, 无 required, 不校验 status 枚举或次数范围.")
-@extension("additionalProperties", true)
 union ChannelAttemptInput {
   {
     channel_id?: integer | null,
@@ -1176,7 +1163,6 @@ union ChannelAttemptInput {
 }
 
 @doc("宽松 DBDump 日志输入, 无 required, 不校验时间范围, 状态枚举或 total_attempts 一致性. id 不自动生成, 只有 include_logs=true 时处理该顶层数组, 按冲突 DoNothing 插入.")
-@extension("additionalProperties", true)
 union RelayLogInput {
   {
     id?: int64 | null,
@@ -1201,7 +1187,6 @@ union RelayLogInput {
 }
 
 @doc("自定义模型价格输出. 全部字段由 Go 序列化输出. 价格为每百万 token 美元, 来源: internal/model/llm.go:3-13, internal/relay/metrics.go:58-61.")
-@extension("additionalProperties", true)
 model LLMInfo {
   name: string;
   input: float64;
@@ -1211,7 +1196,6 @@ model LLMInfo {
 }
 
 @doc("创建或更新的输入, 无 binding required 或数值范围校验. 省略字段及标量 JSON null 形成 Go 零值, 顶层 null 也不会触发字段必填校验, 后续数据库行为不由本 schema 保证. create 在 op 内将 name 转小写且响应仍保留原始 name, update 按原值精确查找. 来源: internal/model/llm.go:3-13, internal/server/handlers/model.go:127-150.")
-@extension("additionalProperties", true)
 union LLMInfoInput {
   {
     name?: string | null,
@@ -1224,7 +1208,6 @@ union LLMInfoInput {
 }
 
 @doc("模型与渠道关联输出, enabled 只表示渠道启用. 来源: internal/model/llm.go:15-20.")
-@extension("additionalProperties", true)
 model LLMChannel {
   name: string;
   enabled: boolean;
@@ -1232,7 +1215,6 @@ model LLMChannel {
   channel_name: string;
 }
 
-@extension("additionalProperties", true)
 model ModelPriceDeleteInput {
   @doc("binding required, 不 trim, 精确匹配自定义价格缓存键.")
   @minLength(1)

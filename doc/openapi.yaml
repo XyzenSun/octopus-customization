@@ -1022,23 +1022,27 @@ paths:
       parameters:
         - name: page
           in: query
+          required: false
           description: 缺失时默认为 1. 使用 strconv.Atoi 解析, 错误被忽略; 普通非数字输入解析为 0 后回退为 1, 小于 1 也回退为 1. 没有业务最大值, 整数解析范围取决于编译架构. 不应理解为非法输入返回 400.
           schema:
             type: string
             default: '1'
         - name: page_size
           in: query
+          required: false
           description: 缺失时默认为 20. 使用 strconv.Atoi 解析, 错误被忽略. 小于 1 或大于 100 时回退为 20, 不是钳制到 1 或 100, 也不返回 400.
           schema:
             type: string
             default: '20'
         - name: start_time
           in: query
+          required: false
           description: Unix 秒的整数文本. 仅当 start_time 和 end_time 都非空时才解析和启用过滤, 此时任一解析失败返回 400. 只有一端非空时整个过滤被忽略, 不校验已提供值. 闭区间, 不校验非负或起止顺序, Go int 范围取决于编译架构.
           schema:
             type: string
         - name: end_time
           in: query
+          required: false
           description: Unix 秒的整数文本. 必须与非空 start_time 同时提供才生效. 过滤为 start_time <= time <= end_time, 倒置区间不会被拒绝, 通常返回空结果.
           schema:
             type: string
@@ -1498,12 +1502,14 @@ paths:
       parameters:
         - name: include_logs
           in: query
+          required: false
           description: 缺失默认 false. strconv.ParseBool 接受 1, t, T, TRUE, true, True 和 0, f, F, FALSE, false, False. 其他文本或空值解析失败后被忽略, 结果为 false, 不返回 400.
           schema:
             type: string
             default: 'false'
         - name: include_stats
           in: query
+          required: false
           description: 缺失默认 false. 接受 strconv.ParseBool 的 1/0, t/f, T/F, TRUE/FALSE, true/false, True/False, 不是任意大小写组合. 非法或空文本回退 false, 不返回 400.
           schema:
             type: string
@@ -1513,6 +1519,7 @@ paths:
           description: 裸 DBDump JSON 下载. 文件名时间使用本地时间, exported_at 使用 UTC.
           headers:
             Content-Disposition:
+              required: false
               description: attachment; filename="octopus-export-YYYYMMDDhhmmss.json".
               schema:
                 type: string
@@ -2432,101 +2439,83 @@ paths:
       responses:
         '200':
           description: 普通转换的非流式 JSON 或 stream:true 的 SSE, 无管理包装. 非流式直通可能保留其他 JSON, Content-Type 或空 body.
+          headers:
+            Cache-Control:
+              required: false
+              description: SSE 时为 no-cache
+              schema:
+                type: string
+            Connection:
+              required: false
+              description: SSE 时为 keep-alive
+              schema:
+                type: string
+            X-Accel-Buffering:
+              required: false
+              description: SSE 时为 no
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/OpenAIChatResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus200application_jsonValue'
             '*/*':
               schema:
                 $ref: '#/components/schemas/PassthroughBody'
             text/event-stream:
               schema:
-                type: string
-                description: SSE 文本. data 通常是 Chat Completions chunk JSON, 可含 [DONE]. 不把整段流声明为 JSON 数组.
-          headers:
-            Cache-Control:
-              description: SSE 时为 no-cache
-              schema:
-                type: string
-            Connection:
-              description: SSE 时为 keep-alive
-              schema:
-                type: string
-            X-Accel-Buffering:
-              description: SSE 时为 no
-              schema:
-                type: string
+                $ref: '#/components/schemas/RelayChatCompletionsStatus200text_event_streamValue'
         '400':
           description: 本地入站校验或模型白名单失败, 或指定渠道上游 HTTP 400
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '401':
           description: Octopus API Key 缺失, 无效, 禁用, 过期或超成本, 或指定渠道上游 HTTP 401
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '404':
           description: 本地模型或直连渠道不存在, 或指定渠道上游 HTTP 404
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '415':
           description: RequireJSON 拒绝 Content-Type, 或指定渠道上游 HTTP 415
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '500':
           description: 本地请求体读取, 解压, 非校验转换或 recovery 失败, 或指定渠道上游 HTTP 500
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '502':
           description: 分组最终失败, 直连网络或转换等真实尝试失败, 或指定渠道上游 HTTP 502
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '503':
           description: 无启用候选, 直连渠道禁用, 无可用 Key, 无有效 BaseURL, 不兼容或熔断, 或指定渠道上游 HTTP 503
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         default:
           description: '其他上游状态. 不一概表示错误: 协议直通可保留非 200 成功状态, body 和 Content-Type. 指定渠道可返回其他上游 HTTP 错误状态及转换后的协议错误体. 普通转换通常生成 200. SSE 提交后的流错误不按此另发响应.'
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/OpenAIChatResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatusdefaultapplication_jsonValue'
             '*/*':
               schema:
-                description: 协议直通可能保留未建模的成功 body, 包括空 body 或非 JSON 内容.
+                $ref: '#/components/schemas/RelayChatCompletionsStatusdefault___Value'
       tags:
         - Relay
       requestBody:
@@ -2550,9 +2539,7 @@ paths:
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/OpenAIEmbeddingResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
+                $ref: '#/components/schemas/RelayEmbeddingsStatus200application_jsonValue'
             '*/*':
               schema:
                 $ref: '#/components/schemas/PassthroughBody'
@@ -2561,70 +2548,52 @@ paths:
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '401':
           description: Octopus API Key 缺失, 无效, 禁用, 过期或超成本, 或指定渠道上游 HTTP 401
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '404':
           description: 本地模型或直连渠道不存在, 或指定渠道上游 HTTP 404
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '415':
           description: RequireJSON 拒绝 Content-Type, 或指定渠道上游 HTTP 415
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '500':
           description: 本地读取, 解压, 非校验转换或 recovery 失败, 或指定渠道上游 HTTP 500
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '502':
           description: 分组最终失败, 直连网络或转换等真实尝试失败, 或指定渠道上游 HTTP 502
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '503':
           description: 无启用候选或直连目标不可用, 不兼容, 熔断, 或指定渠道上游 HTTP 503
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         default:
           description: 其他上游状态, 包括协议直通保留的非 200 成功状态和指定渠道其他 HTTP 错误, 不一概表示错误. 不据此声明 embedding 支持 SSE.
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/OpenAIEmbeddingResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayEmbeddingsStatusdefaultapplication_jsonValue'
             '*/*':
               schema:
-                description: 直通成功可以保留原始或空 body 及其他 Content-Type.
+                $ref: '#/components/schemas/RelayEmbeddingsStatusdefault___Value'
       tags:
         - Relay
       requestBody:
@@ -2648,9 +2617,7 @@ paths:
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ImageResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
+                $ref: '#/components/schemas/RelayImageGenerationsStatus200application_jsonValue'
             '*/*':
               schema:
                 $ref: '#/components/schemas/PassthroughBody'
@@ -2659,62 +2626,46 @@ paths:
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '401':
           description: Octopus API Key 缺失, 无效, 禁用, 过期或超成本, 或指定渠道上游 HTTP 401
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '404':
           description: 本地模型或直连渠道不存在, 或指定渠道上游 HTTP 404
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '500':
           description: 本地读取, 解压, 非校验转换或 recovery 失败, 或指定渠道上游 HTTP 500
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '502':
           description: 分组最终失败, 直连网络或转换等真实尝试失败, 或指定渠道上游 HTTP 502
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '503':
           description: 无启用候选或直连目标不可用, 不兼容, 熔断, 或指定渠道上游 HTTP 503
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         default:
           description: 其他上游状态, 包括协议直通非 200 成功及直连其他 HTTP 错误(例如上游 415), 不一概表示错误. 本入口没有 RequireJSON 的本地 415, 不支持 SSE.
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ImageResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayImageGenerationsStatusdefaultapplication_jsonValue'
             '*/*':
               schema:
-                description: 直通成功可以保留原始或空 body 及其他 Content-Type.
+                $ref: '#/components/schemas/RelayEmbeddingsStatusdefault___Value'
       tags:
         - Relay
       requestBody:
@@ -2746,9 +2697,7 @@ paths:
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ImageResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
+                $ref: '#/components/schemas/RelayImageGenerationsStatus200application_jsonValue'
             '*/*':
               schema:
                 $ref: '#/components/schemas/PassthroughBody'
@@ -2757,70 +2706,52 @@ paths:
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '401':
           description: Octopus API Key 缺失, 无效, 禁用, 过期或超成本, 或指定渠道上游 HTTP 401
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '404':
           description: 本地模型或直连渠道不存在, 或指定渠道上游 HTTP 404
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '415':
           description: RequireJSON 拒绝 Content-Type, 或指定渠道上游 HTTP 415
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '500':
           description: 本地读取, 解压, 非校验转换或 recovery 失败, 或指定渠道上游 HTTP 500
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '502':
           description: 分组最终失败, 直连网络或转换等真实尝试失败, 或指定渠道上游 HTTP 502
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '503':
           description: 无启用候选或直连目标不可用, 不兼容, 熔断, 或指定渠道上游 HTTP 503
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         default:
           description: 其他上游状态, 包括协议直通保留的非 200 成功及指定渠道其他 HTTP 错误, 不一概表示错误. Images 不提供 SSE 支持.
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ImageResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayImageGenerationsStatusdefaultapplication_jsonValue'
             '*/*':
               schema:
-                description: 直通成功可以保留原始或空 body 及其他 Content-Type.
+                $ref: '#/components/schemas/RelayEmbeddingsStatusdefault___Value'
       tags:
         - Relay
       requestBody:
@@ -2844,9 +2775,7 @@ paths:
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ImageResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
+                $ref: '#/components/schemas/RelayImageGenerationsStatus200application_jsonValue'
             '*/*':
               schema:
                 $ref: '#/components/schemas/PassthroughBody'
@@ -2855,62 +2784,46 @@ paths:
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '401':
           description: Octopus API Key 缺失, 无效, 禁用, 过期或超成本, 或指定渠道上游 HTTP 401
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '404':
           description: 本地模型或直连渠道不存在, 或指定渠道上游 HTTP 404
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '500':
           description: 本地读取, 解压, 非校验转换或 recovery 失败, 或指定渠道上游 HTTP 500
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '502':
           description: 分组最终失败, 直连网络或转换等真实尝试失败, 包括 Gemini/Doubao variation 的 prompt 冲突, 或指定渠道上游 HTTP 502
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         '503':
           description: 无启用候选或直连目标不可用, 不兼容, 熔断, 或指定渠道上游 HTTP 503
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayChatCompletionsStatus400application_jsonValue'
         default:
           description: 其他上游状态, 包括协议直通非 200 成功及直连其他 HTTP 错误(例如上游 415), 不一概表示错误. 本入口没有 RequireJSON 的本地 415, 不支持 SSE.
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ImageResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/OpenAIProtocolError'
+                $ref: '#/components/schemas/RelayImageGenerationsStatusdefaultapplication_jsonValue'
             '*/*':
               schema:
-                description: 直通成功可以保留原始或空 body 及其他 Content-Type.
+                $ref: '#/components/schemas/RelayEmbeddingsStatusdefault___Value'
       tags:
         - Relay
       requestBody:
@@ -2950,101 +2863,83 @@ paths:
       responses:
         '200':
           description: 普通转换的非流式 Messages JSON 或 SSE, 无管理包装. 非流式直通可能保留其他 JSON, Content-Type 或空 body.
+          headers:
+            Cache-Control:
+              required: false
+              description: SSE 时为 no-cache
+              schema:
+                type: string
+            Connection:
+              required: false
+              description: SSE 时为 keep-alive
+              schema:
+                type: string
+            X-Accel-Buffering:
+              required: false
+              description: SSE 时为 no
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/AnthropicMessageResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatus200application_jsonValue'
             '*/*':
               schema:
                 $ref: '#/components/schemas/PassthroughBody'
             text/event-stream:
               schema:
-                type: string
-                description: SSE 文本. 包含 message_start, content_block_start, content_block_delta, content_block_stop, message_delta 和 message_stop 等类型事件.
-          headers:
-            Cache-Control:
-              description: SSE 时为 no-cache
-              schema:
-                type: string
-            Connection:
-              description: SSE 时为 keep-alive
-              schema:
-                type: string
-            X-Accel-Buffering:
-              description: SSE 时为 no
-              schema:
-                type: string
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatus200text_event_streamValue'
         '400':
           description: 本地解析, 必填, thinking, system, tool_choice 或白名单校验失败, 或指定渠道上游 HTTP 400
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/AnthropicProtocolError'
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatus400application_jsonValue'
         '401':
           description: Octopus API Key 缺失, 无效, 禁用, 过期或超成本, 或指定渠道上游 HTTP 401
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/AnthropicProtocolError'
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatus400application_jsonValue'
         '404':
           description: 本地模型或直连渠道不存在, 或指定渠道上游 HTTP 404
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/AnthropicProtocolError'
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatus400application_jsonValue'
         '415':
           description: RequireJSON 拒绝 Content-Type, 或指定渠道上游 HTTP 415
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/AnthropicProtocolError'
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatus400application_jsonValue'
         '500':
           description: 本地读取, 解压, 非校验转换或 recovery 失败, 或指定渠道上游 HTTP 500
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/AnthropicProtocolError'
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatus400application_jsonValue'
         '502':
           description: 分组最终失败, 直连网络或转换等真实尝试失败, 或指定渠道上游 HTTP 502
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/AnthropicProtocolError'
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatus400application_jsonValue'
         '503':
           description: 无启用候选, 直连渠道禁用, 无可用 Key, 无有效 BaseURL, 不兼容或熔断, 或指定渠道上游 HTTP 503
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/AnthropicProtocolError'
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatus400application_jsonValue'
         default:
           description: 其他上游状态. 包括协议直通保留的非 200 成功状态及指定渠道转换后的其他 HTTP 错误, 不一概表示错误. 直通可保留原始成功 Content-Type 和 body.
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/AnthropicMessageResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/AnthropicProtocolError'
+                $ref: '#/components/schemas/RelayAnthropicMessagesStatusdefaultapplication_jsonValue'
             '*/*':
               schema:
-                description: 直通成功可保留空 body 或其他未建模内容.
+                $ref: '#/components/schemas/RelayResponsesStatusdefault___Value'
       tags:
         - Relay
       requestBody:
@@ -3095,101 +2990,83 @@ paths:
       responses:
         '200':
           description: 普通转换的非流式 Responses JSON 或 SSE, 无管理包装. 非流式直通可能保留其他 JSON, Content-Type 或空 body.
+          headers:
+            Cache-Control:
+              required: false
+              description: SSE 时为 no-cache
+              schema:
+                type: string
+            Connection:
+              required: false
+              description: SSE 时为 keep-alive
+              schema:
+                type: string
+            X-Accel-Buffering:
+              required: false
+              description: SSE 时为 no
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ResponsesResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
+                $ref: '#/components/schemas/RelayResponsesStatus200application_jsonValue'
             '*/*':
               schema:
                 $ref: '#/components/schemas/PassthroughBody'
             text/event-stream:
               schema:
-                type: string
-                description: SSE 文本. 包含 response.created, response.output_text.delta, response.completed 等类型事件, 具体事件取决于转换和上游能力.
-          headers:
-            Cache-Control:
-              description: SSE 时为 no-cache
-              schema:
-                type: string
-            Connection:
-              description: SSE 时为 keep-alive
-              schema:
-                type: string
-            X-Accel-Buffering:
-              description: SSE 时为 no
-              schema:
-                type: string
+                $ref: '#/components/schemas/RelayResponsesStatus200text_event_streamValue'
         '400':
           description: 本地解析, 入站校验或白名单失败, 或指定渠道上游 HTTP 400
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/ResponsesProtocolError'
+                $ref: '#/components/schemas/RelayResponsesStatus400application_jsonValue'
         '401':
           description: Octopus API Key 缺失, 无效, 禁用, 过期或超成本, 或指定渠道上游 HTTP 401
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/ResponsesProtocolError'
+                $ref: '#/components/schemas/RelayResponsesStatus400application_jsonValue'
         '404':
           description: 本地模型或直连渠道不存在, 或指定渠道上游 HTTP 404
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/ResponsesProtocolError'
+                $ref: '#/components/schemas/RelayResponsesStatus400application_jsonValue'
         '415':
           description: RequireJSON 拒绝 Content-Type, 或指定渠道上游 HTTP 415
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/ResponsesProtocolError'
+                $ref: '#/components/schemas/RelayResponsesStatus400application_jsonValue'
         '500':
           description: 本地读取, 解压, 非校验转换或 recovery 失败, 或指定渠道上游 HTTP 500
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/ResponsesProtocolError'
+                $ref: '#/components/schemas/RelayResponsesStatus400application_jsonValue'
         '502':
           description: 分组最终失败, 直连网络或转换等真实尝试失败, 或指定渠道上游 HTTP 502
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/ResponsesProtocolError'
+                $ref: '#/components/schemas/RelayResponsesStatus400application_jsonValue'
         '503':
           description: 无启用候选, 直连渠道禁用, 无可用 Key, 无有效 BaseURL, 不兼容或熔断, 或指定渠道上游 HTTP 503
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/ResponsesProtocolError'
+                $ref: '#/components/schemas/RelayResponsesStatus400application_jsonValue'
         default:
           description: 其他上游状态, 包括协议直通保留的非 200 成功状态及指定渠道转换后的其他 HTTP 错误. 不一概表示错误. body 和 Content-Type 可能来自直通上游.
           content:
             application/json:
               schema:
-                anyOf:
-                  - $ref: '#/components/schemas/ResponsesResponse'
-                  - $ref: '#/components/schemas/PassthroughJSON'
-                  - $ref: '#/components/schemas/ErrorResponse'
-                  - $ref: '#/components/schemas/ResponsesProtocolError'
+                $ref: '#/components/schemas/RelayResponsesStatusdefaultapplication_jsonValue'
             '*/*':
               schema:
-                description: 直通成功可保留空 body 或其他未建模内容.
+                $ref: '#/components/schemas/RelayResponsesStatusdefault___Value'
       tags:
         - Relay
       requestBody:
@@ -3292,7 +3169,6 @@ components:
                 - type: 'null'
               description: 常见 5m 或 1h, 本入站未统一校验.
         - type: 'null'
-      additionalProperties: true
     AnthropicContent:
       anyOf:
         - type: string
@@ -3400,7 +3276,6 @@ components:
               description: 任意 JSON 原生工具调用来源信息.
         - type: 'null'
       description: 'text, image, thinking, redacted_thinking, tool_use, server_tool_use, tool_result 或 provider-native 工具结果等开放内容块. 不给 type 和逐项字段添加未经执行的统一必填/枚举. 来源: axonhub pin transformer/anthropic/model.go:351-424.'
-      additionalProperties: true
     AnthropicImageSource:
       anyOf:
         - type: object
@@ -3423,7 +3298,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 已知 source 字段, 常见 type=base64 或 url, media_type 常见 PNG/JPEG/GIF/WebP. 本消息入口未统一执行枚举或 base64 校验, 不把图片上传路由的规则套用到此处.
-      additionalProperties: true
     AnthropicMessageParam:
       anyOf:
         - type: object
@@ -3437,7 +3311,6 @@ components:
               $ref: '#/components/schemas/AnthropicContent'
         - type: 'null'
       description: '消息元素没有逐项 role/content 必填或 role 枚举验证. content 若显式出现为 null, 自定义解码会报错; 省略 content 不触发其解码器. 来源: axonhub pin transformer/anthropic/model.go:264-348.'
-      additionalProperties: true
     AnthropicMessageResponse:
       type: object
       properties:
@@ -3467,7 +3340,6 @@ components:
         usage:
           $ref: '#/components/schemas/AnthropicUsage'
       description: '非流式 Messages 及 message_start.message 的已知输出. 普通转换包含 id/type/role/content/model, 为直通兼容不强制所有字段. 来源: axonhub pin transformer/anthropic/model.go:519-544.'
-      additionalProperties: true
     AnthropicMessagesRequest:
       type: object
       required:
@@ -3521,7 +3393,6 @@ components:
                     - type: string
                     - type: 'null'
             - type: 'null'
-          additionalProperties: true
         service_tier:
           anyOf:
             - type: string
@@ -3553,7 +3424,6 @@ components:
                     - type: 'null'
                   description: 仅 thinking.type=adaptive 且 effort 非空时校验 low, medium, high, xhigh, max. 其他情况下不伪造此枚举校验.
             - type: 'null'
-          additionalProperties: true
         tools:
           anyOf:
             - type: array
@@ -3570,7 +3440,6 @@ components:
         cache_control:
           $ref: '#/components/schemas/AnthropicCacheControl'
       description: 依据 axonhub pin transformer/anthropic/model.go:11-102 和 inbound.go:28-119. 执行 model/messages 非空和 max_tokens>0 校验. system 数组只允许 text 类型, thinking enabled 要求正 budget_tokens, adaptive 仅对非空 output_config.effort 检查 low, medium, high, xhigh, max. 其他采样范围, role, cache_control 注释枚举不当作执行校验. 允许未知扩展, 跨协议转换不保证全部原生工具和多模态内容无损.
-      additionalProperties: true
     AnthropicModel:
       type: object
       required:
@@ -3594,7 +3463,6 @@ components:
           type: string
           enum:
             - model
-      additionalProperties: true
     AnthropicModelList:
       type: object
       required:
@@ -3616,7 +3484,6 @@ components:
         last_id:
           type: string
       description: 'x-api-key 鉴权的列表形态, 不使用 SuccessBase. 空 data 为 null 并省略 first_id/last_id. 首末项随未排序的缓存遍历而变. 来源: internal/server/handlers/model.go:72-91.'
-      additionalProperties: true
     AnthropicProtocolError:
       type: object
       required:
@@ -3637,9 +3504,7 @@ components:
           required:
             - type
             - message
-          additionalProperties: true
       description: '指定渠道直连可识别上游 HTTP 错误转换后的 Anthropic 体. 顶层 type 来自统一 Detail.Type, 可能为 api_error 等, 不固定为 error, 空 type 可省略. request_id 可为空字符串. 本地错误和 Group 最终失败仍用 ErrorResponse. 来源: axonhub pin transformer/anthropic/inbound.go:188-202, model.go:546-558.'
-      additionalProperties: true
     AnthropicStreamDelta:
       anyOf:
         - type: object
@@ -3676,7 +3541,6 @@ components:
                         - type: string
                         - type: 'null'
                 - type: 'null'
-              additionalProperties: true
             thinking:
               anyOf:
                 - type: string
@@ -3694,7 +3558,6 @@ components:
                 - type: string
                 - type: 'null'
         - type: 'null'
-      additionalProperties: true
     AnthropicStreamEvent:
       type: object
       properties:
@@ -3715,7 +3578,6 @@ components:
         usage:
           $ref: '#/components/schemas/AnthropicUsage'
       description: '单个 SSE data 的已知事件结构, 整段响应仍为 text/event-stream string. 来源: axonhub pin transformer/anthropic/model.go:446-466.'
-      additionalProperties: true
     AnthropicSystemPromptPart:
       type: object
       required:
@@ -3732,7 +3594,6 @@ components:
         cache_control:
           $ref: '#/components/schemas/AnthropicCacheControl'
       description: 仅 type=text 是执行过的逐项规则, text 没有另行非空或 required 校验.
-      additionalProperties: true
     AnthropicThinking:
       anyOf:
         - type: object
@@ -3772,7 +3633,6 @@ components:
               budget_tokens:
                 type: integer
                 minimum: 1
-      additionalProperties: true
     AnthropicTool:
       anyOf:
         - type: object
@@ -3844,10 +3704,8 @@ components:
                         - type: 'null'
                       description: 常见 approximate, 无入口枚举校验.
                 - type: 'null'
-              additionalProperties: true
         - type: 'null'
       description: '自定义工具和原生 web_search 等工具. name/input_schema 没有统一 required 校验, 不声称 allowed_domains 与 blocked_domains 互斥被入口执行. 来源: axonhub pin transformer/anthropic/model.go:207-235.'
-      additionalProperties: true
     AnthropicToolChoice:
       anyOf:
         - type: object
@@ -3886,7 +3744,6 @@ components:
               name:
                 type: string
                 minLength: 1
-      additionalProperties: true
     AnthropicUsage:
       anyOf:
         - type: object
@@ -3914,7 +3771,6 @@ components:
                       type: integer
                       format: int64
                 - type: 'null'
-              additionalProperties: true
             service_tier:
               type: string
             cached_tokens:
@@ -3922,7 +3778,6 @@ components:
               format: int64
         - type: 'null'
       description: '来源: axonhub pin transformer/anthropic/usage.go:7-33. 普通转换可能重算 input_tokens 的缓存部分, 不保证直通及转换数值含义完全相同.'
-      additionalProperties: true
     BaseUrl:
       type: object
       required:
@@ -4111,7 +3966,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松导入尝试记录, 无 required, 不校验 status 枚举或次数范围.
-      additionalProperties: true
     ChannelEnabledRequest:
       type: object
       properties:
@@ -4373,7 +4227,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 'DBDump.channel_keys 的宽松输入, 不复用严格输出 required. 遗漏或 null 进入 Go 零值, 未知字段允许. default:true 与关联写入的精确 GORM 行为未做依赖或运行验证. Source: internal/model/channel.go:49-57.'
-      additionalProperties: true
     ChannelKeyInput:
       type: object
       properties:
@@ -4603,7 +4456,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松自定义请求头输入, 没有 required binding, 遗漏或 null 进入 Go 零值, 未知字段允许.
-      additionalProperties: true
     DBDump:
       type: object
       required:
@@ -4807,7 +4659,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: '宽松增量导入对象. 无 required, 未知字段允许并被 Go JSON 解码忽略, JSON null 或 {} 可走空导入. version 缺失或 null 成为 0, 仅 0 或 1 被业务接受, 其他版本返回 400, 此处以描述记录版本校验而不把导出 const 复用于输入. exported_at 若提供必须能被 Go time.Time 解码, 可遗漏或为 null, 未用于恢复逻辑. 数组遗漏, null 或 [] 都表示无对应行. include 标志缺失或 null 默认为 false, 只有相应标志为 true 才处理顶层日志或统计. 不调用实体创建校验或 Setting.Validate, 不强制枚举, 非负数或日期业务规则. 整数仍必须符合对应 Go 类型解析范围. Source: internal/server/handlers/setting.go:153-186; internal/model/backup.go:7-28; internal/op/backup.go:79-175.'
-      additionalProperties: true
     DBDumpInputapi_keysItemValue:
       anyOf:
         - $ref: '#/components/schemas/APIKeyInput'
@@ -4852,7 +4703,6 @@ components:
             - type: 'null'
         index:
           type: integer
-      additionalProperties: true
     EmbeddingDataembeddingVariant2Value:
       type: string
       description: 通常为 base64, 不添加未经执行的编码约束.
@@ -5091,7 +4941,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 'DBDump.group_items 的宽松输入, 不执行分组创建或增量更新请求的 required 校验, 数据库约束仍可能使事务失败. Source: internal/model/group.go:24-30.'
-      additionalProperties: true
     GroupItemInput:
       type: object
       properties:
@@ -5206,7 +5055,6 @@ components:
           type: string
         revised_prompt:
           type: string
-      additionalProperties: true
     ImageEditRequest:
       type: object
       required:
@@ -5266,7 +5114,6 @@ components:
             - image
         - required:
             - image[]
-      additionalProperties: true
     ImageEditRequestParts:
       type: object
       properties:
@@ -5396,7 +5243,6 @@ components:
           description: true 明确返回 400, null 被忽略并归零, 不支持 SSE.
           default: false
       description: 依据 axonhub pin transformer/openai/image_inbound.go:54-69,199-250. prompt 非空但不 trim. 可选普通标量的 JSON null 被当作零值, model null/空/省略默认 dall-e-2. 不加未执行的 n, quality, size, compression 或格式范围校验. 参数保留受出站及实际模型限制.
-      additionalProperties: true
     ImageResponse:
       type: object
       properties:
@@ -5420,7 +5266,6 @@ components:
         usage:
           $ref: '#/components/schemas/ImageUsage'
       description: '三个 Images 路由的非流式已知输出. 普通转换包含 created 和 data, 直通成功扩展保持开放, 不保证 URL 和 base64 两种字段同时存在. 来源: axonhub pin transformer/openai/image_outbound.go 的 ImagesResponse/ImageData, image_inbound.go:120-183.'
-      additionalProperties: true
     ImageUsage:
       anyOf:
         - type: object
@@ -5448,7 +5293,6 @@ components:
                       type: integer
                       format: int64
                 - type: 'null'
-              additionalProperties: true
             output_tokens_details:
               anyOf:
                 - type: object
@@ -5457,9 +5301,7 @@ components:
                       type: integer
                       format: int64
                 - type: 'null'
-              additionalProperties: true
         - type: 'null'
-      additionalProperties: true
     ImageVariationRequest:
       type: object
       properties:
@@ -5499,7 +5341,6 @@ components:
             - image
         - required:
             - image[]
-      additionalProperties: true
       not:
         required:
           - image
@@ -5559,7 +5400,6 @@ components:
         channel_name:
           type: string
       description: '模型与渠道关联输出, enabled 只表示渠道启用. 来源: internal/model/llm.go:15-20.'
-      additionalProperties: true
     LLMInfo:
       type: object
       required:
@@ -5584,7 +5424,6 @@ components:
           type: number
           format: double
       description: '自定义模型价格输出. 全部字段由 Go 序列化输出. 价格为每百万 token 美元, 来源: internal/model/llm.go:3-13, internal/relay/metrics.go:58-61.'
-      additionalProperties: true
     LLMInfoInput:
       anyOf:
         - type: object
@@ -5615,7 +5454,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: '创建或更新的输入, 无 binding required 或数值范围校验. 省略字段及标量 JSON null 形成 Go 零值, 顶层 null 也不会触发字段必填校验, 后续数据库行为不由本 schema 保证. create 在 op 内将 name 转小写且响应仍保留原始 name, update 按原值精确查找. 来源: internal/model/llm.go:3-13, internal/server/handlers/model.go:127-150.'
-      additionalProperties: true
     LatestInfo:
       type: object
       required:
@@ -5731,7 +5569,6 @@ components:
           type: string
           minLength: 1
           description: binding required, 不 trim, 精确匹配自定义价格缓存键.
-      additionalProperties: true
     OpenAIChatChoice:
       type: object
       properties:
@@ -5756,8 +5593,6 @@ components:
                         $ref: '#/components/schemas/OpenAITokenLogprob'
                     - type: 'null'
             - type: 'null'
-          additionalProperties: true
-      additionalProperties: true
     OpenAIChatContent:
       anyOf:
         - type: string
@@ -5790,11 +5625,9 @@ components:
                         - type: string
                         - type: 'null'
                 - type: 'null'
-              additionalProperties: true
             input_audio:
               $ref: '#/components/schemas/OpenAIInputAudio'
         - type: 'null'
-      additionalProperties: true
     OpenAIChatMessage:
       anyOf:
         - type: object
@@ -5842,7 +5675,6 @@ components:
               $ref: '#/components/schemas/OpenAIOutputAudio'
         - type: 'null'
       description: '对话消息及响应消息. role 和 content 没有逐项 required 校验. 来源: axonhub pin transformer/openai/model.go:162-187.'
-      additionalProperties: true
     OpenAIChatRequest:
       type: object
       required:
@@ -5998,9 +5830,7 @@ components:
                     - type: 'null'
                   description: 常见 enabled 或 disabled, 此 OpenAI 入站未执行枚举校验.
             - type: 'null'
-          additionalProperties: true
       description: 依据 axonhub/llm v0.0.0-20260710123537-d061ac7df6ae 的 transformer/openai/model.go:15-103 和 inbound.go:26-71. 只声明已执行的 model/messages 非空约束, 不把字段注释中的采样范围或 role 值视为入口校验. 未知字段可出现在原始请求并在符合条件的直通中保留, 转换路径不保证保留. optional 指针接受 null, 普通标量 JSON null 通常成为零值.
-      additionalProperties: true
     OpenAIChatRequestlogit_biasAdditionalPropertyValue:
       anyOf:
         - type: integer
@@ -6044,7 +5874,6 @@ components:
             - type: 'null'
           description: 此依赖 Response.Error 使用 OpenAIError 包装, 原生或直通响应还可能有其他扩展形态.
       description: '普通转换的 Chat Completions 响应或流 chunk 已知字段. 为覆盖符合条件的协议直通, 不强制所有上游字段齐全. usage 可为 null, choices 可为空或 null. 来源: axonhub pin transformer/openai/model.go:304-328.'
-      additionalProperties: true
     OpenAIChatResponseFormat:
       anyOf:
         - type: object
@@ -6057,7 +5886,6 @@ components:
             json_schema:
               description: 任意 JSON, 对应 json.RawMessage, 不保证上游执行所有约束.
         - type: 'null'
-      additionalProperties: true
     OpenAIChatStreamOptions:
       anyOf:
         - type: object
@@ -6068,7 +5896,6 @@ components:
                 - type: 'null'
               description: 是否请求 usage, 实际流 usage 仍依赖上游和 pipeline.
         - type: 'null'
-      additionalProperties: true
     OpenAIChatTool:
       anyOf:
         - type: object
@@ -6081,7 +5908,6 @@ components:
             function:
               $ref: '#/components/schemas/OpenAIFunctionDefinition'
         - type: 'null'
-      additionalProperties: true
     OpenAIChatToolCall:
       anyOf:
         - type: object
@@ -6112,7 +5938,6 @@ components:
                         - type: 'null'
                       description: 通常为 JSON 字符串, 此 Chat 结构没有 Responses Item 的任意 JSON arguments 兼容解析.
                 - type: 'null'
-              additionalProperties: true
             extra_content:
               anyOf:
                 - type: object
@@ -6126,9 +5951,7 @@ components:
                                 - type: string
                                 - type: 'null'
                         - type: 'null'
-                      additionalProperties: true
                 - type: 'null'
-              additionalProperties: true
             extra_fields:
               anyOf:
                 - type: object
@@ -6146,13 +5969,9 @@ components:
                                         - type: string
                                         - type: 'null'
                                 - type: 'null'
-                              additionalProperties: true
                         - type: 'null'
-                      additionalProperties: true
                 - type: 'null'
-              additionalProperties: true
         - type: 'null'
-      additionalProperties: true
     OpenAIChatToolChoice:
       anyOf:
         - type: string
@@ -6172,7 +5991,6 @@ components:
                         - type: string
                         - type: 'null'
                 - type: 'null'
-              additionalProperties: true
       description: '字符串或命名工具对象, optional null 被忽略. 常见 auto, none, required, 本入站未执行这些枚举. 来源: axonhub pin transformer/openai/model.go:413-455.'
     OpenAIChatUsage:
       anyOf:
@@ -6204,7 +6022,6 @@ components:
                       type: integer
                       format: int64
                 - type: 'null'
-              additionalProperties: true
             completion_tokens_details:
               anyOf:
                 - type: object
@@ -6222,10 +6039,8 @@ components:
                       type: integer
                       format: int64
                 - type: 'null'
-              additionalProperties: true
         - type: 'null'
       description: '普通转换时按此字段输出, 未强制上游 usage 或扩展完整. 来源: axonhub pin transformer/openai/usage.go:6-30.'
-      additionalProperties: true
     OpenAIEmbeddingRequest:
       type: object
       required:
@@ -6250,7 +6065,6 @@ components:
             - type: string
             - type: 'null'
       description: 依据 axonhub pin transformer/openai/embedding.go:13-19 和 embedding_inbound.go:26-136. 无正式 stream 字段, 未知字段可保留于直通, 不能因此声明 SSE 支持. 不执行 dimensions 正数或 encoding_format 枚举校验.
-      additionalProperties: true
     OpenAIEmbeddingResponse:
       type: object
       properties:
@@ -6275,9 +6089,7 @@ components:
                   type: integer
                   format: int64
             - type: 'null'
-          additionalProperties: true
       description: 'OpenAI 兼容非流式向量响应. 普通转换输出 object/data/model/usage, 直通扩展允许. Gemini 转换可能输出空 model 和零 usage, 不保证真实模型名称或计数. 来源: axonhub pin transformer/openai/embedding.go:21-36, embedding_inbound.go:139-198.'
-      additionalProperties: true
     OpenAIFunctionDefinition:
       anyOf:
         - type: object
@@ -6297,7 +6109,6 @@ components:
                 - type: boolean
                 - type: 'null'
         - type: 'null'
-      additionalProperties: true
     OpenAIImageURL:
       anyOf:
         - type: object
@@ -6313,7 +6124,6 @@ components:
                 - type: 'null'
               description: 常见 auto, low, high, 入站未统一枚举校验.
         - type: 'null'
-      additionalProperties: true
     OpenAIInputAudio:
       anyOf:
         - type: object
@@ -6328,7 +6138,6 @@ components:
                 - type: 'null'
               description: 通常为 base64 音频, 本 schema 不伪造格式校验.
         - type: 'null'
-      additionalProperties: true
     OpenAIModel:
       type: object
       required:
@@ -6352,7 +6161,6 @@ components:
           type: string
           enum:
             - octopus
-      additionalProperties: true
     OpenAIModelList:
       type: object
       required:
@@ -6375,7 +6183,6 @@ components:
                 $ref: '#/components/schemas/OpenAIModel'
             - type: 'null'
       description: 'Authorization API Key 鉴权的列表形态, 不使用 SuccessBase. 空 data 为 null. 来源: internal/server/handlers/model.go:93-106.'
-      additionalProperties: true
     OpenAIOutputAudio:
       anyOf:
         - type: object
@@ -6398,7 +6205,6 @@ components:
                 - type: string
                 - type: 'null'
         - type: 'null'
-      additionalProperties: true
     OpenAIProtocolError:
       type: object
       required:
@@ -6420,9 +6226,7 @@ components:
           required:
             - message
             - type
-          additionalProperties: true
       description: '指定渠道直连可识别上游 HTTP 错误转换后的 OpenAI 体. 本地错误和 Group 最终失败不使用此体. 非逐字透传原始错误或全部 Header. 来源: internal/relay/direct_channel.go:90-109, axonhub pin transformer/openai/inbound.go:202-246, model.go:351-354, 根级 model.go:871-877.'
-      additionalProperties: true
     OpenAITokenLogprob:
       type: object
       properties:
@@ -6453,7 +6257,6 @@ components:
                           type: integer
                       - type: 'null'
             - type: 'null'
-      additionalProperties: true
     PassthroughBody:
       type: string
       format: binary
@@ -6491,7 +6294,6 @@ components:
                         - type: string
                         - type: 'null'
                 - type: 'null'
-              additionalProperties: true
             url:
               anyOf:
                 - type: string
@@ -6502,7 +6304,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: '引用或标注. Responses 还接受扁平 url/title 并转换到 url_citation. 来源: axonhub pin transformer/openai/model.go:190-207, transformer/openai/responses/model.go:375-413.'
-      additionalProperties: true
     RelayAnthropicMessagesStatus200application_jsonValue:
       anyOf:
         - $ref: '#/components/schemas/AnthropicMessageResponse'
@@ -6714,7 +6515,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松 DBDump 日志输入, 无 required, 不校验时间范围, 状态枚举或 total_attempts 一致性. id 不自动生成, 只有 include_logs=true 时处理该顶层数组, 按冲突 DoNothing 插入.
-      additionalProperties: true
     RelayResponsesStatus200application_jsonValue:
       anyOf:
         - $ref: '#/components/schemas/ResponsesResponse'
@@ -6916,7 +6716,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 'Responses 输入或输出的开放联合项. 已知 type 包括 message, input_text, input_image, output_text, function_call, function_call_output, custom_tool_call, custom_tool_call_output, image_generation_call, reasoning, compaction, compaction_summary 等, 不按注释添加 type/role 枚举或逐项必填. function_call_output/custom_tool_call_output 在入站转换时要求 output 非 null, 此规则在描述中限定. 不支持的项在跨协议转换中可能跳过, 特定同协议 provider extensions 可保留原始片段. 来源: axonhub pin transformer/openai/responses/model.go:512-674, inbound.go:487-629, request_extensions.go.'
-      additionalProperties: true
     ResponsesProtocolError:
       type: object
       required:
@@ -6934,9 +6733,7 @@ components:
           required:
             - message
             - type
-          additionalProperties: true
       description: '指定渠道直连可识别上游 HTTP 错误转换后的 Responses 体. 本地错误和 Group 最终失败使用 ErrorResponse. 来源: axonhub pin transformer/openai/responses/inbound.go:90-164.'
-      additionalProperties: true
     ResponsesReasoning:
       anyOf:
         - type: object
@@ -6960,7 +6757,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 不把依赖注释中的 effort/summary 值或 token 范围当作统一入站校验.
-      additionalProperties: true
     ResponsesRequest:
       type: object
       required:
@@ -7066,7 +6862,6 @@ components:
                     - type: boolean
                     - type: 'null'
             - type: 'null'
-          additionalProperties: true
         tool_choice:
           $ref: '#/components/schemas/ResponsesToolChoice'
         truncation:
@@ -7083,7 +6878,6 @@ components:
             - type: number
             - type: 'null'
       description: 依据 axonhub pin transformer/openai/responses/model.go:89-159 和 inbound.go:38-63. input 没有必填或 minItems 校验, 省略可通过入站但部分出站要求非空 messages. background 字段被解析但普通转换没有映射, prompt/conversation 未作为本请求结构字段实现, 未知字段仅在直通或特定 provider extensions 下可能保留. 不声明未执行的采样或枚举范围.
-      additionalProperties: true
     ResponsesResponse:
       type: object
       properties:
@@ -7103,7 +6897,6 @@ components:
                 message:
                   type: string
             - type: 'null'
-          additionalProperties: true
         created_at:
           type: integer
           format: int64
@@ -7127,7 +6920,6 @@ components:
                 reason:
                   type: string
             - type: 'null'
-          additionalProperties: true
         instructions:
           anyOf:
             - type: string
@@ -7169,7 +6961,6 @@ components:
                 id:
                   type: string
             - type: 'null'
-          additionalProperties: true
         max_output_tokens:
           anyOf:
             - type: integer
@@ -7201,7 +6992,6 @@ components:
                         type: string
                     - type: 'null'
             - type: 'null'
-          additionalProperties: true
         prompt_cache_key:
           anyOf:
             - type: string
@@ -7238,7 +7028,6 @@ components:
             - type: string
             - type: 'null'
       description: 'Responses 非流式已知输出, 普通转换主要生成 object, id, created_at, model, output, status 及可用 usage. 其余已知扩展可能只由原生或直通上游提供, 不保证转换完整往返. 为兼容直通未将所有字段设为 required. 来源: axonhub pin transformer/openai/responses/model.go:769-858.'
-      additionalProperties: true
     ResponsesStreamEvent:
       type: object
       properties:
@@ -7280,7 +7069,6 @@ components:
                     - type: string
                     - type: 'null'
             - type: 'null'
-          additionalProperties: true
         delta:
           type: string
         text:
@@ -7314,7 +7102,6 @@ components:
             - type: string
             - type: 'null'
       description: '单个 SSE data 解码后的已知事件结构, 不是整个 text/event-stream 响应的 JSON schema. 来源: axonhub pin transformer/openai/responses/stream_event.go:69-129.'
-      additionalProperties: true
     ResponsesTextOptions:
       anyOf:
         - type: object
@@ -7346,9 +7133,7 @@ components:
                         - type: boolean
                         - type: 'null'
                 - type: 'null'
-              additionalProperties: true
         - type: 'null'
-      additionalProperties: true
     ResponsesTool:
       anyOf:
         - type: object
@@ -7369,7 +7154,6 @@ components:
               anyOf:
                 - type: object
                 - type: 'null'
-              additionalProperties: true
             strict:
               anyOf:
                 - type: boolean
@@ -7391,7 +7175,6 @@ components:
                         - type: string
                         - type: 'null'
                 - type: 'null'
-              additionalProperties: true
             filters:
               anyOf:
                 - type: object
@@ -7405,7 +7188,6 @@ components:
                               - type: 'null'
                         - type: 'null'
                 - type: 'null'
-              additionalProperties: true
             user_location:
               anyOf:
                 - type: object
@@ -7431,7 +7213,6 @@ components:
                         - type: string
                         - type: 'null'
                 - type: 'null'
-              additionalProperties: true
             action:
               anyOf:
                 - type: string
@@ -7448,7 +7229,6 @@ components:
               anyOf:
                 - type: object
                 - type: 'null'
-              additionalProperties: true
             model:
               anyOf:
                 - type: string
@@ -7481,7 +7261,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: '已知结构表达 function, image_generation, custom, web_search. 其他 type 不声明枚举限制, 普通跨协议转换可能跳过, 同协议出站有部分原始片段恢复能力. 来源: axonhub pin transformer/openai/responses/model.go:25-65.'
-      additionalProperties: true
     ResponsesToolChoice:
       anyOf:
         - type: string
@@ -7533,7 +7312,6 @@ components:
                       type: integer
                       format: int64
                 - type: 'null'
-              additionalProperties: true
             output_tokens:
               type: integer
               format: int64
@@ -7545,13 +7323,11 @@ components:
                       type: integer
                       format: int64
                 - type: 'null'
-              additionalProperties: true
             total_tokens:
               type: integer
               format: int64
         - type: 'null'
       description: '来源: axonhub pin transformer/openai/responses/usage.go:7-17. 可无 usage, 不强制非负值或额外字段.'
-      additionalProperties: true
     Setting:
       type: object
       required:
@@ -7579,7 +7355,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松 Setting 输入, key 和 value 没有 required binding, 遗漏或 null 进入 Go 字符串零值. /set 再执行按 key 校验和缓存存在性检查, 导入则不调用 Validate. 预定义键, 默认和校验见 Setting, 此 schema 不把它们作为导入约束.
-      additionalProperties: true
     StatsAPIKey:
       type: object
       required:
@@ -7669,7 +7444,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松 API Key 统计输入, 按 api_key_id upsert.
-      additionalProperties: true
     StatsChannel:
       type: object
       required:
@@ -7759,7 +7533,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松渠道统计输入, 按 channel_id upsert.
-      additionalProperties: true
     StatsDaily:
       type: object
       required:
@@ -7849,7 +7622,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松日统计输入, 不校验 date 格式, 按 date upsert.
-      additionalProperties: true
     StatsHourly:
       type: object
       required:
@@ -7947,7 +7719,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松小时统计输入, 不校验 hour 为 0 到 23 或 date 格式, 仅按 hour upsert.
-      additionalProperties: true
     StatsMetrics:
       type: object
       required:
@@ -8029,7 +7800,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: DBDump 统计指标宽松输入, 无 required 或非负约束. null 或遗漏的标量进入零值, 未知字段允许.
-      additionalProperties: true
     StatsModel:
       type: object
       required:
@@ -8135,7 +7905,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松模型统计输入, 不要求名称或关联 ID, 按 id upsert, 数据库约束仍可失败.
-      additionalProperties: true
     StatsTotal:
       type: object
       required:
@@ -8225,7 +7994,6 @@ components:
                 - type: 'null'
         - type: 'null'
       description: 宽松全局统计输入, 规范字段为大写 ID, Go JSON 解码也可能按大小写不敏感匹配输入名. 按数据库 id upsert.
-      additionalProperties: true
     StreamRelayLogsStatus200text_event_streamValue:
       type: string
       description: '重复的 data: <RelayLog JSON>\n\n 文本帧.'

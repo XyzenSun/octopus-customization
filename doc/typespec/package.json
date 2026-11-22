@@ -9,7 +9,7 @@
   "scripts": {
     "check": "tsp compile . --no-emit",
     "generate": "tsp compile .",
-    "format": "tsp format *.tsp"
+    "format": "tsp format *.tsp operations/*.tsp"
   },
   "devDependencies": {
     "@typespec/compiler": "1.18.0",

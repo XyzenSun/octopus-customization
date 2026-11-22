@@ -3,7 +3,6 @@ using TypeSpec.OpenAPI;
 
 namespace Octopus;
 
-@extension("additionalProperties", true)
 model OpenAIModel {
   id: string;
   object: "model";
@@ -15,7 +14,6 @@ model OpenAIModel {
   owned_by: "octopus";
 }
 
-@extension("additionalProperties", true)
 model AnthropicModel {
   id: string;
 
@@ -30,7 +28,6 @@ model AnthropicModel {
 }
 
 @doc("Authorization API Key 鉴权的列表形态, 不使用 SuccessBase. 空 data 为 null. 来源: internal/server/handlers/model.go:93-106.")
-@extension("additionalProperties", true)
 model OpenAIModelList {
   success: true;
   object: "list";
@@ -38,7 +35,6 @@ model OpenAIModelList {
 }
 
 @doc("x-api-key 鉴权的列表形态, 不使用 SuccessBase. 空 data 为 null 并省略 first_id/last_id. 首末项随未排序的缓存遍历而变. 来源: internal/server/handlers/model.go:72-91.")
-@extension("additionalProperties", true)
 model AnthropicModelList {
   data: AnthropicModel[] | null;
   has_more: false;
@@ -60,7 +56,6 @@ scalar PassthroughBody extends string;
 scalar RelayRoutingModel extends string;
 
 @doc("依据 axonhub/llm v0.0.0-20260710123537-d061ac7df6ae 的 transformer/openai/model.go:15-103 和 inbound.go:26-71. 只声明已执行的 model/messages 非空约束, 不把字段注释中的采样范围或 role 值视为入口校验. 未知字段可出现在原始请求并在符合条件的直通中保留, 转换路径不保证保留. optional 指针接受 null, 普通标量 JSON null 通常成为零值.")
-@extension("additionalProperties", true)
 model OpenAIChatRequest {
   `model`: RelayRoutingModel;
 
@@ -113,8 +108,6 @@ model OpenAIChatRequest {
   tool_choice?: OpenAIChatToolChoice;
   response_format?: OpenAIChatResponseFormat;
   verbosity?: string | null;
-
-  @extension("additionalProperties", true)
   thinking?:
     | {
         @doc("常见 enabled 或 disabled, 此 OpenAI 入站未执行枚举校验.")
@@ -124,7 +117,6 @@ model OpenAIChatRequest {
 }
 
 @doc("对话消息及响应消息. role 和 content 没有逐项 required 校验. 来源: axonhub pin transformer/openai/model.go:162-187.")
-@extension("additionalProperties", true)
 union OpenAIChatMessage {
   {
     @doc("常见 system, developer, user, assistant, tool, 入站未逐项执行枚举校验.")
@@ -150,7 +142,6 @@ union OpenAIChatContent {
   OpenAIChatContentPart[],
 }
 
-@extension("additionalProperties", true)
 union OpenAIChatContentPart {
   {
     @doc("常见 text, image_url, video_url, input_audio, 不执行通用枚举校验.")
@@ -158,20 +149,16 @@ union OpenAIChatContentPart {
 
     text?: string | null,
     image_url?: OpenAIImageURL,
-
-    @extension("additionalProperties", true)
     video_url?:
       | {
           url?: string | null,
         }
       | null,
-
     input_audio?: OpenAIInputAudio,
   },
   null,
 }
 
-@extension("additionalProperties", true)
 union OpenAIImageURL {
   {
     @doc("URL 或 data URL, 不在此声明统一 URI 或图片格式校验.")
@@ -183,7 +170,6 @@ union OpenAIImageURL {
   null,
 }
 
-@extension("additionalProperties", true)
 union OpenAIInputAudio {
   {
     format?: string | null,
@@ -194,7 +180,6 @@ union OpenAIInputAudio {
   null,
 }
 
-@extension("additionalProperties", true)
 union OpenAIOutputAudio {
   {
     id?: string | null,
@@ -206,28 +191,23 @@ union OpenAIOutputAudio {
 }
 
 @doc("引用或标注. Responses 还接受扁平 url/title 并转换到 url_citation. 来源: axonhub pin transformer/openai/model.go:190-207, transformer/openai/responses/model.go:375-413.")
-@extension("additionalProperties", true)
 union RelayAnnotation {
   {
     type?: string | null,
     start_index?: int64 | null,
     end_index?: int64 | null,
-
-    @extension("additionalProperties", true)
     url_citation?:
       | {
           url?: string | null,
           title?: string | null,
         }
       | null,
-
     url?: string | null,
     title?: string | null,
   },
   null,
 }
 
-@extension("additionalProperties", true)
 union OpenAIChatStreamOptions {
   {
     @doc("是否请求 usage, 实际流 usage 仍依赖上游和 pipeline.")
@@ -236,7 +216,6 @@ union OpenAIChatStreamOptions {
   null,
 }
 
-@extension("additionalProperties", true)
 union OpenAIChatTool {
   {
     @doc("常见 function, 未执行统一枚举校验.")
@@ -247,7 +226,6 @@ union OpenAIChatTool {
   null,
 }
 
-@extension("additionalProperties", true)
 union OpenAIFunctionDefinition {
   {
     name?: string | null,
@@ -261,14 +239,11 @@ union OpenAIFunctionDefinition {
   null,
 }
 
-@extension("additionalProperties", true)
 union OpenAIChatToolCall {
   {
     id?: string | null,
     type?: string | null,
     index?: integer | null,
-
-    @extension("additionalProperties", true)
     function?:
       | {
           name?: string | null,
@@ -277,11 +252,8 @@ union OpenAIChatToolCall {
           arguments?: string | null,
         }
       | null,
-
-    @extension("additionalProperties", true)
     extra_content?:
       | {
-          @extension("additionalProperties", true)
           google?:
             | {
                 thought_signature?: string | null,
@@ -289,14 +261,10 @@ union OpenAIChatToolCall {
             | null,
         }
       | null,
-
-    @extension("additionalProperties", true)
     extra_fields?:
       | {
-          @extension("additionalProperties", true)
           extra_content?:
             | {
-                @extension("additionalProperties", true)
                 google?:
                   | {
                       thought_signature?: string | null,
@@ -316,8 +284,6 @@ union OpenAIChatToolChoice {
   null,
   {
     type?: string | null,
-
-    @extension("additionalProperties", true)
     function?:
       | {
           name?: string | null,
@@ -326,7 +292,6 @@ union OpenAIChatToolChoice {
   },
 }
 
-@extension("additionalProperties", true)
 union OpenAIChatResponseFormat {
   {
     @doc("常见 text, json_object, json_schema, 本入口无统一枚举校验.")
@@ -339,7 +304,6 @@ union OpenAIChatResponseFormat {
 }
 
 @doc("普通转换的 Chat Completions 响应或流 chunk 已知字段. 为覆盖符合条件的协议直通, 不强制所有上游字段齐全. usage 可为 null, choices 可为空或 null. 来源: axonhub pin transformer/openai/model.go:304-328.")
-@extension("additionalProperties", true)
 model OpenAIChatResponse {
   id?: string;
 
@@ -361,14 +325,11 @@ model OpenAIChatResponse {
   error?: OpenAIProtocolError | null;
 }
 
-@extension("additionalProperties", true)
 model OpenAIChatChoice {
   index?: integer;
   message?: OpenAIChatMessage;
   delta?: OpenAIChatMessage;
   finish_reason?: string | null;
-
-  @extension("additionalProperties", true)
   logprobs?:
     | {
         content?: OpenAITokenLogprob[] | null;
@@ -376,7 +337,6 @@ model OpenAIChatChoice {
     | null;
 }
 
-@extension("additionalProperties", true)
 model OpenAITokenLogprob {
   token?: string;
   logprob?: numeric;
@@ -391,15 +351,12 @@ model OpenAITokenLogprob {
 }
 
 @doc("普通转换时按此字段输出, 未强制上游 usage 或扩展完整. 来源: axonhub pin transformer/openai/usage.go:6-30.")
-@extension("additionalProperties", true)
 union OpenAIChatUsage {
   {
     prompt_tokens?: int64,
     completion_tokens?: int64,
     total_tokens?: int64,
     cached_tokens?: int64,
-
-    @extension("additionalProperties", true)
     prompt_tokens_details?:
       | {
           audio_tokens?: int64,
@@ -407,8 +364,6 @@ union OpenAIChatUsage {
           write_cached_tokens?: int64,
         }
       | null,
-
-    @extension("additionalProperties", true)
     completion_tokens_details?:
       | {
           audio_tokens?: int64,
@@ -422,7 +377,6 @@ union OpenAIChatUsage {
 }
 
 @doc("依据 axonhub pin transformer/openai/responses/model.go:89-159 和 inbound.go:38-63. input 没有必填或 minItems 校验, 省略可通过入站但部分出站要求非空 messages. background 字段被解析但普通转换没有映射, prompt/conversation 未作为本请求结构字段实现, 未知字段仅在直通或特定 provider extensions 下可能保留. 不声明未执行的采样或枚举范围.")
-@extension("additionalProperties", true)
 model ResponsesRequest {
   `model`: RelayRoutingModel;
   instructions?: string | null;
@@ -457,14 +411,11 @@ model ResponsesRequest {
   prompt_cache_key?: string | null;
   prompt_cache_retention?: string | null;
   reasoning?: ResponsesReasoning;
-
-  @extension("additionalProperties", true)
   stream_options?:
     | {
         include_obfuscation?: boolean | null;
       }
     | null;
-
   tool_choice?: ResponsesToolChoice;
   truncation?: string | null;
   top_logprobs?: int64 | null;
@@ -479,7 +430,6 @@ union ResponsesInput {
 }
 
 @doc("Responses 输入或输出的开放联合项. 已知 type 包括 message, input_text, input_image, output_text, function_call, function_call_output, custom_tool_call, custom_tool_call_output, image_generation_call, reasoning, compaction, compaction_summary 等, 不按注释添加 type/role 枚举或逐项必填. function_call_output/custom_tool_call_output 在入站转换时要求 output 非 null, 此规则在描述中限定. 不支持的项在跨协议转换中可能跳过, 特定同协议 provider extensions 可保留原始片段. 来源: axonhub pin transformer/openai/responses/model.go:512-674, inbound.go:487-629, request_extensions.go.")
-@extension("additionalProperties", true)
 union ResponsesItem {
   {
     id?: string | null,
@@ -553,19 +503,13 @@ union ResponsesItem {
 }
 
 @doc("已知结构表达 function, image_generation, custom, web_search. 其他 type 不声明枚举限制, 普通跨协议转换可能跳过, 同协议出站有部分原始片段恢复能力. 来源: axonhub pin transformer/openai/responses/model.go:25-65.")
-@extension("additionalProperties", true)
 union ResponsesTool {
   {
     type?: string | null,
     name?: string | null,
     description?: string | null,
-
-    @extension("additionalProperties", true)
     parameters?: {} | null,
-
     strict?: boolean | null,
-
-    @extension("additionalProperties", true)
     format?:
       | {
           type?: string | null,
@@ -573,15 +517,11 @@ union ResponsesTool {
           definition?: string | null,
         }
       | null,
-
-    @extension("additionalProperties", true)
     filters?:
       | {
           allowed_domains?: (string | null)[] | null,
         }
       | null,
-
-    @extension("additionalProperties", true)
     user_location?:
       | {
           type?: string | null,
@@ -591,14 +531,10 @@ union ResponsesTool {
           timezone?: string | null,
         }
       | null,
-
     action?: string | null,
     background?: string | null,
     input_fidelity?: string | null,
-
-    @extension("additionalProperties", true)
     input_image_mask?: {} | null,
-
     `model`?: string | null,
     moderation?: string | null,
     output_compression?: int64 | null,
@@ -629,12 +565,9 @@ union ResponsesToolChoice {
   },
 }
 
-@extension("additionalProperties", true)
 union ResponsesTextOptions {
   {
     verbosity?: string | null,
-
-    @extension("additionalProperties", true)
     format?:
       | {
           type?: string | null,
@@ -652,7 +585,6 @@ union ResponsesTextOptions {
 }
 
 @doc("不把依赖注释中的 effort/summary 值或 token 范围当作统一入站校验.")
-@extension("additionalProperties", true)
 union ResponsesReasoning {
   {
     effort?: string | null,
@@ -664,14 +596,11 @@ union ResponsesReasoning {
 }
 
 @doc("Responses 非流式已知输出, 普通转换主要生成 object, id, created_at, model, output, status 及可用 usage. 其余已知扩展可能只由原生或直通上游提供, 不保证转换完整往返. 为兼容直通未将所有字段设为 required. 来源: axonhub pin transformer/openai/responses/model.go:769-858.")
-@extension("additionalProperties", true)
 model ResponsesResponse {
   @doc("普通转换为 response, 不强制直通常量.")
   object?: string;
 
   id?: string;
-
-  @extension("additionalProperties", true)
   error?:
     | {
         type?: string;
@@ -679,7 +608,6 @@ model ResponsesResponse {
         message?: string;
       }
     | null;
-
   created_at?: int64;
   `model`?: string;
   output?: ResponsesItem[] | null;
@@ -687,13 +615,11 @@ model ResponsesResponse {
   @doc("常见 completed, failed, in_progress, canceled, queued, incomplete, 实际状态由转换或直通决定.")
   status?: string | null;
 
-  @extension("additionalProperties", true)
   incomplete_details?:
     | {
         reason?: string;
       }
     | null;
-
   instructions?: string | null;
   metadata?:
     | {
@@ -706,19 +632,14 @@ model ResponsesResponse {
   tools?: ResponsesTool[] | null;
   top_p?: numeric | null;
   background?: boolean | null;
-
-  @extension("additionalProperties", true)
   conversation?:
     | {
         id?: string;
       }
     | null;
-
   max_output_tokens?: int64 | null;
   max_tool_calls?: int64 | null;
   previous_response_id?: string | null;
-
-  @extension("additionalProperties", true)
   prompt?:
     | {
         id?: string;
@@ -730,7 +651,6 @@ model ResponsesResponse {
           | null;
       }
     | null;
-
   prompt_cache_key?: string | null;
   prompt_cache_retention?: string | null;
   reasoning?: ResponsesReasoning;
@@ -744,34 +664,26 @@ model ResponsesResponse {
 }
 
 @doc("来源: axonhub pin transformer/openai/responses/usage.go:7-17. 可无 usage, 不强制非负值或额外字段.")
-@extension("additionalProperties", true)
 union ResponsesUsage {
   {
     input_tokens?: int64,
-
-    @extension("additionalProperties", true)
     input_tokens_details?:
       | {
           cached_tokens?: int64,
         }
       | null,
-
     output_tokens?: int64,
-
-    @extension("additionalProperties", true)
     output_tokens_details?:
       | {
           reasoning_tokens?: int64,
         }
       | null,
-
     total_tokens?: int64,
   },
   null,
 }
 
 @doc("单个 SSE data 解码后的已知事件结构, 不是整个 text/event-stream 响应的 JSON schema. 来源: axonhub pin transformer/openai/responses/stream_event.go:69-129.")
-@extension("additionalProperties", true)
 model ResponsesStreamEvent {
   @doc("生命周期, output item, content part, text, tool arguments, reasoning summary, image generation 或 error 等事件, 不限制扩展类型.")
   type?: string;
@@ -782,8 +694,6 @@ model ResponsesStreamEvent {
   item?: ResponsesItem;
   item_id?: string | null;
   content_index?: integer | null;
-
-  @extension("additionalProperties", true)
   part?:
     | {
         type?: string;
@@ -792,7 +702,6 @@ model ResponsesStreamEvent {
         refusal?: string | null;
       }
     | null;
-
   delta?: string;
   text?: string;
   name?: string;
@@ -809,7 +718,6 @@ model ResponsesStreamEvent {
 }
 
 @doc("依据 axonhub pin transformer/anthropic/model.go:11-102 和 inbound.go:28-119. 执行 model/messages 非空和 max_tokens>0 校验. system 数组只允许 text 类型, thinking enabled 要求正 budget_tokens, adaptive 仅对非空 output_config.effort 检查 low, medium, high, xhigh, max. 其他采样范围, role, cache_control 注释枚举不当作执行校验. 允许未知扩展, 跨协议转换不保证全部原生工具和多模态内容无损.")
-@extension("additionalProperties", true)
 model AnthropicMessagesRequest {
   `model`: RelayRoutingModel;
 
@@ -826,27 +734,21 @@ model AnthropicMessagesRequest {
   temperature?: numeric | null;
   top_k?: int64 | null;
   top_p?: numeric | null;
-
-  @extension("additionalProperties", true)
   metadata?:
     | {
         user_id?: string | null;
       }
     | null;
-
   service_tier?: string | null;
   stop_sequences?: (string | null)[] | null;
   system?: string | null | AnthropicSystemPromptPart[];
   thinking?: AnthropicThinking;
-
-  @extension("additionalProperties", true)
   output_config?:
     | {
         @doc("仅 thinking.type=adaptive 且 effort 非空时校验 low, medium, high, xhigh, max. 其他情况下不伪造此枚举校验.")
         effort?: string | null;
       }
     | null;
-
   tools?: AnthropicTool[] | null;
   tool_choice?: AnthropicToolChoice;
 
@@ -857,7 +759,6 @@ model AnthropicMessagesRequest {
 }
 
 @doc("消息元素没有逐项 role/content 必填或 role 枚举验证. content 若显式出现为 null, 自定义解码会报错; 省略 content 不触发其解码器. 来源: axonhub pin transformer/anthropic/model.go:264-348.")
-@extension("additionalProperties", true)
 union AnthropicMessageParam {
   {
     @doc("常见 user 或 assistant, 未执行 role 枚举校验.")
@@ -875,7 +776,6 @@ union AnthropicContent {
 }
 
 @doc("text, image, thinking, redacted_thinking, tool_use, server_tool_use, tool_result 或 provider-native 工具结果等开放内容块. 不给 type 和逐项字段添加未经执行的统一必填/枚举. 来源: axonhub pin transformer/anthropic/model.go:351-424.")
-@extension("additionalProperties", true)
 union AnthropicContentBlock {
   {
     type?: string | null,
@@ -920,7 +820,6 @@ union AnthropicContentBlock {
 }
 
 @doc("仅 type=text 是执行过的逐项规则, text 没有另行非空或 required 校验.")
-@extension("additionalProperties", true)
 model AnthropicSystemPromptPart {
   type: "text";
   text?: string | null;
@@ -928,7 +827,6 @@ model AnthropicSystemPromptPart {
 }
 
 @doc("已知 source 字段, 常见 type=base64 或 url, media_type 常见 PNG/JPEG/GIF/WebP. 本消息入口未统一执行枚举或 base64 校验, 不把图片上传路由的规则套用到此处.")
-@extension("additionalProperties", true)
 union AnthropicImageSource {
   {
     type?: string | null,
@@ -939,7 +837,6 @@ union AnthropicImageSource {
   null,
 }
 
-@extension("additionalProperties", true)
 union AnthropicCacheControl {
   {
     @doc("常见 ephemeral, 不把 validate tag 视为已执行枚举校验.")
@@ -952,7 +849,6 @@ union AnthropicCacheControl {
 }
 
 @doc("自定义工具和原生 web_search 等工具. name/input_schema 没有统一 required 校验, 不声称 allowed_domains 与 blocked_domains 互斥被入口执行. 来源: axonhub pin transformer/anthropic/model.go:207-235.")
-@extension("additionalProperties", true)
 union AnthropicTool {
   {
     type?: string | null,
@@ -967,8 +863,6 @@ union AnthropicTool {
     strict?: boolean | null,
     allowed_domains?: (string | null)[] | null,
     blocked_domains?: (string | null)[] | null,
-
-    @extension("additionalProperties", true)
     user_location?:
       | {
           city?: string | null,
@@ -986,7 +880,6 @@ union AnthropicTool {
 
 // TypeSpec 的联合类型保留基础结构, JSON Schema 条件补充跨字段校验, 两者共同约束同一载荷.
 @doc("非 null 对象执行 type 枚举, enabled 执行正 budget_tokens. adaptive 对非空 output_config.effort 的额外规则见请求描述. 来源: axonhub pin transformer/anthropic/inbound.go:79-101.")
-@extension("additionalProperties", true)
 @extension(
   "allOf",
   #[
@@ -1016,7 +909,6 @@ union AnthropicThinking {
 
 // TypeSpec 的联合类型保留基础结构, JSON Schema 条件补充跨字段校验, 两者共同约束同一载荷.
 @doc("非 null 对象执行 type 枚举, tool 要求 name 非空. 不 trim name. 来源: axonhub pin transformer/anthropic/inbound.go:104-117.")
-@extension("additionalProperties", true)
 @extension(
   "allOf",
   #[
@@ -1043,22 +935,18 @@ union AnthropicToolChoice {
 }
 
 @doc("来源: axonhub pin transformer/anthropic/usage.go:7-33. 普通转换可能重算 input_tokens 的缓存部分, 不保证直通及转换数值含义完全相同.")
-@extension("additionalProperties", true)
 union AnthropicUsage {
   {
     input_tokens?: int64,
     output_tokens?: int64,
     cache_creation_input_tokens?: int64,
     cache_read_input_tokens?: int64,
-
-    @extension("additionalProperties", true)
     cache_creation?:
       | {
           ephemeral_5m_input_tokens?: int64,
           ephemeral_1h_input_tokens?: int64,
         }
       | null,
-
     service_tier?: string,
     cached_tokens?: int64,
   },
@@ -1066,7 +954,6 @@ union AnthropicUsage {
 }
 
 @doc("非流式 Messages 及 message_start.message 的已知输出. 普通转换包含 id/type/role/content/model, 为直通兼容不强制所有字段. 来源: axonhub pin transformer/anthropic/model.go:519-544.")
-@extension("additionalProperties", true)
 model AnthropicMessageResponse {
   id?: string;
   type?: string;
@@ -1082,7 +969,6 @@ model AnthropicMessageResponse {
 }
 
 @doc("单个 SSE data 的已知事件结构, 整段响应仍为 text/event-stream string. 来源: axonhub pin transformer/anthropic/model.go:446-466.")
-@extension("additionalProperties", true)
 model AnthropicStreamEvent {
   @doc("message_start, message_delta, message_stop, content_block_start/delta/stop 等, 保留扩展类型.")
   type?: string;
@@ -1094,7 +980,6 @@ model AnthropicStreamEvent {
   usage?: AnthropicUsage;
 }
 
-@extension("additionalProperties", true)
 union AnthropicStreamDelta {
   {
     @doc("常见 text_delta, input_json_delta, citations_delta, thinking_delta, signature_delta.")
@@ -1102,8 +987,6 @@ union AnthropicStreamDelta {
 
     text?: string | null,
     partial_json?: string | null,
-
-    @extension("additionalProperties", true)
     citation?:
       | {
           type?: string,
@@ -1113,7 +996,6 @@ union AnthropicStreamDelta {
           cited_text?: string | null,
         }
       | null,
-
     thinking?: string | null,
     signature?: string | null,
     stop_reason?: string | null,
@@ -1123,7 +1005,6 @@ union AnthropicStreamDelta {
 }
 
 @doc("依据 axonhub pin transformer/openai/embedding.go:13-19 和 embedding_inbound.go:26-136. 无正式 stream 字段, 未知字段可保留于直通, 不能因此声明 SSE 支持. 不执行 dimensions 正数或 encoding_format 枚举校验.")
-@extension("additionalProperties", true)
 model OpenAIEmbeddingRequest {
   `model`: RelayRoutingModel;
   input: EmbeddingInput;
@@ -1144,13 +1025,10 @@ union EmbeddingInput {
 }
 
 @doc("OpenAI 兼容非流式向量响应. 普通转换输出 object/data/model/usage, 直通扩展允许. Gemini 转换可能输出空 model 和零 usage, 不保证真实模型名称或计数. 来源: axonhub pin transformer/openai/embedding.go:21-36, embedding_inbound.go:139-198.")
-@extension("additionalProperties", true)
 model OpenAIEmbeddingResponse {
   object?: string;
   data?: EmbeddingData[] | null;
   `model`?: string;
-
-  @extension("additionalProperties", true)
   usage?:
     | {
         prompt_tokens?: int64;
@@ -1159,7 +1037,6 @@ model OpenAIEmbeddingResponse {
     | null;
 }
 
-@extension("additionalProperties", true)
 model EmbeddingData {
   object?: string;
   embedding?: numeric[] | EmbeddingDataembeddingVariant2Value | null;
@@ -1167,7 +1044,6 @@ model EmbeddingData {
 }
 
 @doc("依据 axonhub pin transformer/openai/image_inbound.go:54-69,199-250. prompt 非空但不 trim. 可选普通标量的 JSON null 被当作零值, model null/空/省略默认 dall-e-2. 不加未执行的 n, quality, size, compression 或格式范围校验. 参数保留受出站及实际模型限制.")
-@extension("additionalProperties", true)
 model ImageGenerationRequest {
   @minLength(1)
   prompt: string;
@@ -1198,7 +1074,6 @@ model ImageGenerationRequest {
 scalar ImageFile extends string;
 
 @doc("至少 image 或 image[] 提供非空文件集合, 支持多张图片和可选 mask. 总文件 part 数限制包括 mask/未知文件, 不将其误写为仅图片数量. 所有文本参数是 multipart 字符串. 可选 int64 参数解析失败成为 nil, 不触发数值范围校验. 来源: axonhub pin transformer/openai/image_inbound.go:252-321,389-483,536-549.")
-@extension("additionalProperties", true)
 @extension("anyOf", #[#{ required: #["image"] }, #{ required: #["image[]"] }])
 model ImageEditRequest {
   @doc("单个或重复 image 文件 part.")
@@ -1243,7 +1118,6 @@ model ImageEditRequest {
 
 @doc("image 或 image[] 合计恰好一个图片文件. 此 schema 拒绝同时提供两种文件字段. 非空 prompt 不允许, mask 即使被解析也不参与内部 variation. 不支持 SSE. 来源: axonhub pin transformer/openai/image_inbound.go:323-371.")
 @extension("not", #{ required: #["image", "image[]"] })
-@extension("additionalProperties", true)
 @extension("anyOf", #[#{ required: #["image"] }, #{ required: #["image[]"] }])
 model ImageVariationRequest {
   image?: ImageFile | ImageVariationRequestimageVariant2Value;
@@ -1272,7 +1146,6 @@ model ImageVariationRequest {
 }
 
 @doc("三个 Images 路由的非流式已知输出. 普通转换包含 created 和 data, 直通成功扩展保持开放, 不保证 URL 和 base64 两种字段同时存在. 来源: axonhub pin transformer/openai/image_outbound.go 的 ImagesResponse/ImageData, image_inbound.go:120-183.")
-@extension("additionalProperties", true)
 model ImageResponse {
   created?: int64;
   data?: ImageData[] | null;
@@ -1283,7 +1156,6 @@ model ImageResponse {
   usage?: ImageUsage;
 }
 
-@extension("additionalProperties", true)
 model ImageData {
   @doc("base64 图片字符串, 此 schema 不声称执行编码校验.")
   b64_json?: string;
@@ -1292,14 +1164,11 @@ model ImageData {
   revised_prompt?: string;
 }
 
-@extension("additionalProperties", true)
 union ImageUsage {
   {
     input_tokens?: int64,
     output_tokens?: int64,
     total_tokens?: int64,
-
-    @extension("additionalProperties", true)
     input_tokens_details?:
       | {
           image_tokens?: int64,
@@ -1307,8 +1176,6 @@ union ImageUsage {
           cached_tokens?: int64,
         }
       | null,
-
-    @extension("additionalProperties", true)
     output_tokens_details?:
       | {
           reasoning_tokens?: int64,
@@ -1319,9 +1186,7 @@ union ImageUsage {
 }
 
 @doc("指定渠道直连可识别上游 HTTP 错误转换后的 OpenAI 体. 本地错误和 Group 最终失败不使用此体. 非逐字透传原始错误或全部 Header. 来源: internal/relay/direct_channel.go:90-109, axonhub pin transformer/openai/inbound.go:202-246, model.go:351-354, 根级 model.go:871-877.")
-@extension("additionalProperties", true)
 model OpenAIProtocolError {
-  @extension("additionalProperties", true)
   error: {
     message: string;
     type: string;
@@ -1332,9 +1197,7 @@ model OpenAIProtocolError {
 }
 
 @doc("指定渠道直连可识别上游 HTTP 错误转换后的 Responses 体. 本地错误和 Group 最终失败使用 ErrorResponse. 来源: axonhub pin transformer/openai/responses/inbound.go:90-164.")
-@extension("additionalProperties", true)
 model ResponsesProtocolError {
-  @extension("additionalProperties", true)
   error: {
     message: string;
     type: string;
@@ -1343,12 +1206,9 @@ model ResponsesProtocolError {
 }
 
 @doc("指定渠道直连可识别上游 HTTP 错误转换后的 Anthropic 体. 顶层 type 来自统一 Detail.Type, 可能为 api_error 等, 不固定为 error, 空 type 可省略. request_id 可为空字符串. 本地错误和 Group 最终失败仍用 ErrorResponse. 来源: axonhub pin transformer/anthropic/inbound.go:188-202, model.go:546-558.")
-@extension("additionalProperties", true)
 model AnthropicProtocolError {
   type?: string;
   request_id: string;
-
-  @extension("additionalProperties", true)
   error: {
     type: string;
     message: string;

@@ -11,3 +11,5 @@ options:
     output-file: openapi.yaml
     omit-unreachable-types: false
     include-x-typespec-name: never
+    # 对象沿用开放输入规则, 封闭响应在 .tsp 中单独标注.
+    seal-object-schemas: false
