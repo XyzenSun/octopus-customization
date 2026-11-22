@@ -108,7 +108,7 @@
 
 `POST /api/v1/channel/create`
 
-请求体直接绑定到 `model.Channel`（参考 [ENTITY.dbml](ENTITY.dbml) 中的 `channels` 表）。常用字段：
+请求体直接绑定到 `model.Channel`（参考 [ENTITY.dbml](../ENTITY.dbml) 中的 `channels` 表）。常用字段：
 
 | 字段 | Go类型 | JSON键 | 说明 |
 |------|--------|--------|------|
@@ -373,7 +373,7 @@
 
 | 字段 | Go类型 | JSON键 | 说明 |
 |------|--------|--------|------|
-| Key | `SettingKey` | `key` | 设置项键名（参见 [ENTITY.dbml](ENTITY.dbml) 中 `settings` 的 note） |
+| Key | `SettingKey` | `key` | 设置项键名（参见 [ENTITY.dbml](../ENTITY.dbml) 中 `settings` 的 note） |
 | Value | `string` | `value` | 字符串形式的值 |
 
 > 设置项写入前会调用 `Validate()` 校验；当 `Key` 为 `model_info_update_interval` 或 `sync_llm_interval` 时，会同步刷新对应定时任务的间隔。
@@ -601,7 +601,7 @@
 | `GET /total` | `StatsMetrics` | 全局累计 |
 | `GET /apikey` | `[]StatsAPIKey` | 按 API Key 维度统计 |
 
-> `StatsMetrics` 公共字段和 `StatsDaily`、`StatsHourly`、`StatsAPIKey` 对应表定义详见 [ENTITY.dbml](ENTITY.dbml)。
+> `StatsMetrics` 公共字段和 `StatsDaily`、`StatsHourly`、`StatsAPIKey` 对应表定义详见 [ENTITY.dbml](../ENTITY.dbml)。
 
 ---
 
