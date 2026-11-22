@@ -1,0 +1,13 @@
+# 只生成 OpenAPI 3.1.0, 默认覆盖 doc/openapi.yaml, 不生成 SDK 或业务代码.
+emit:
+  - "@typespec/openapi3"
+output-dir: "{project-root}/.."
+options:
+  "@typespec/openapi3":
+    emitter-output-dir: "{output-dir}"
+    openapi-versions:
+      - "3.1.0"
+    file-type: yaml
+    output-file: openapi.yaml
+    omit-unreachable-types: false
+    include-x-typespec-name: never
