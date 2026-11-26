@@ -3,18 +3,22 @@
 Project Octopus {
   Note: '''
     Octopus 数据库实体. 来源: internal/model/*.go, internal/db/db.go 和 internal/db/migrate/*.go.
-    包含 AutoMigrate 注册的 16 张表, 使用 GORM 默认的 snake_case 列名和复数表名.
+    包含 17 张持久化实体表, 其中 16 张沿用通用 AutoMigrate, privacy_rules 使用驱动专属建表路径.
+    使用 GORM 默认的 snake_case 列名和复数表名, PrivacyRule.TableName 显式固定为 privacy_rules.
     支持 SQLite, MySQL 和 PostgreSQL; 本文件未限定数据库版本, 不作为可直接执行的迁移脚本.
 
     integer 表示 Go int/uint, bigint 表示 Go int64, float 表示 Go float64; real 保留显式 GORM 类型.
     Go int/uint 的宽度取决于构建架构, MySQL 的 uint 使用 unsigned, PostgreSQL 由驱动映射.
     text 表示字符串存储; MySQL 根据主键和索引映射为 varchar(191) 或 longtext, 其他驱动按自身规则处理.
+    binary 仅用于 PrivacyBytes: SQLite BLOB, MySQL 按字段 size 映射为 VARBINARY(512/64), PostgreSQL BYTEA.
+    PrivacyBytes 在 SQL 中绑定独立原始 []byte, Scanner 只接受 []byte; JSON 输出为明文字符串而非 base64.
     float 保留现有 Go 数值类型, 不新增金额精度或币种规则; PostgreSQL 驱动默认映射为 decimal.
     serializer:json 使用字符串列存储 JSON, 不声明为原生 JSON/JSONB 列.
 
     仅主键和显式 not null 字段标记非空. Go 非指针字段不等于数据库 NOT NULL.
     单列整数主键沿用 GORM 默认自增行为, RelayLog.ID 显式关闭自增; 统计维度和迁移版本由应用赋值.
-    Ref 只描述 GORM 已声明的数据库关联, 业务引用写入字段 note; 不新增外键、CHECK 或级联行为.
+    Ref 只描述 GORM 已声明的数据库关联, 业务引用写入字段 note; 不新增外键或级联行为.
+    CHECK 仅记录 privacy_rules 的实际 SQLite 006 DDL, 不把它视作其他驱动或其他表的共同约束.
     JSON 值对象写入字段 note, 公共嵌入字段使用 TablePartial, 均不独立建表.
   '''
 }
@@ -150,11 +154,58 @@ Table settings {
     circuit_breaker_max_cooldown = 600: 渠道级熔断最大冷却秒数.
     circuit_breaker_enabled = true: 渠道级熔断开关.
     key_circuit_breaker_enabled = true: Key 级熔断开关.
-    passthrough_enabled = false: 协议直通开关, 不改变路由方式.
+    passthrough_enabled = false: 协议直通开关, 不改变路由方式, 不绕过已启用的隐私内容层改写.
     two_factor_enabled = false: TOTP 两步验证开关, 密钥另存于 users.two_factor_secret.
+    privacy_enabled = false: 数据脱敏功能开关, 仅接受字符串 true/false.
+    privacy_scopes = 1: 默认只处理普通消息; 十进制数字组成的 Go int 值 0-15, 0 关闭全部范围.
+    范围位固定为 Messages=1, ToolDefinitions=2, ToolCalls=4, ToolResponses=8, 同时作用于请求和响应.
+    privacy_failure_policy = continue: 仅接受 continue/abort, continue 可能放弃未提交改写并发送原文.
+    三个隐私设置与完整规则集合校验及编译, 同一隐私写锁内事务提交后一次发布请求快照.
+    当前请求保持原快照, 不逐尝试或 SSE 片段刷新; 单实例一致性, 不提供多实例刷新.
 
     布尔开关仅接受 true/false; 正文上限仅接受大于等于 -1 的整数.
     其他数值校验按 Validate 实际分支执行, 不在数据库中补充 CHECK.
+    备份导入也逐行执行 Setting.Validate, 不绕过三个隐私设置的完整候选校验.
+  '''
+}
+
+Table privacy_rules {
+  id integer [pk, increment, note: '规则主键, Go int. SQLite 为 INTEGER PRIMARY KEY AUTOINCREMENT, MySQL/PostgreSQL 沿用驱动自增映射.']
+  source binary [not null, note: '原文, Go PrivacyBytes, size:512. 有效 UTF-8, 1-512 bytes, 可含合法 NUL, 空白和换行; 不 trim, 不转大小写或归一化.']
+  alias binary [not null, note: '别名, Go PrivacyBytes, size:64. 严格 ASCII [A-Z0-9_]{1,64}, 不自动转大写; 标记固定为 [[OCTOPUS_PII:ALIAS]].']
+  enabled boolean [not null, default: true, note: '新规则默认启用. op 使用非 nil *bool 插入, map 更新显式写 false, 不让 GORM default:true 覆盖停用状态.']
+
+  indexes {
+    source [unique, name: 'ux_privacy_rules_source', note: '独立单列完整二进制唯一索引, 覆盖停用规则; 不是前缀, 摘要, 表达式或 partial 索引, 不与 alias 组成联合键.']
+    alias [unique, name: 'ux_privacy_rules_alias', note: '独立单列完整二进制唯一索引, 覆盖停用规则; MySQL/PostgreSQL 使用默认 BTREE/btree, 无前缀或 INCLUDE 列.']
+  }
+
+  Note: '''
+    隐私规则, 对应 model.PrivacyRule, 源码 internal/model/privacy.go, internal/op/privacy.go 和 internal/db/migrate/006.go.
+    source/alias 按原始二进制字节分别全表唯一, 大小写, 重音, 尾随空格和组合 Unicode 不归一化.
+    SQLite 为 BLOB/BLOB, 006 BeforeAutoMigrate 在新表事务内创建专用 DDL 和两个独立唯一索引.
+    SQLite 始终排除该表的 AutoMigrate; MySQL 新表使用 VARBINARY(512)/VARBINARY(64), PostgreSQL 新表使用 BYTEA/BYTEA,
+    两者仅新表通过独立静默 AutoMigrate 建表, 已存在且验证通过的表不再迁移.
+
+    以下六个命名 CHECK 仅由 SQLite 006 DDL 实际建立, 不推断 MySQL/PostgreSQL 具有相同约束:
+    ck_privacy_rules_source_blob: typeof(source) = 'blob'.
+    ck_privacy_rules_source_length: length(source) BETWEEN 1 AND 512, BLOB 长度按字节计.
+    ck_privacy_rules_alias_blob: typeof(alias) = 'blob'.
+    ck_privacy_rules_alias_length: length(alias) BETWEEN 1 AND 64.
+    ck_privacy_rules_alias_ascii: instr(alias, X'00') = 0 AND CAST(alias AS TEXT) NOT GLOB '*[^A-Z0-9_]*'.
+    ck_privacy_rules_enabled: typeof(enabled) = 'integer' AND enabled IN (0, 1).
+    enabled 的 SQLite 列声明为 NUMERIC NOT NULL DEFAULT true; MySQL 为 tinyint(1), PostgreSQL 为 bool.
+    BLOB 的 typeof CHECK 防止同值 TEXT/BLOB 混存绕过唯一性. SQLite SQL 不判断完整 UTF-8, Go 严格解码负责.
+    三库保存前及加载后均校验业务字段, 隐私 SQL 查询, 事务和 schema 校验静默, 不打印规则或驱动参数.
+    不使用字符串 collation, 摘要索引或静态加密; 无外键, DeletedAt 或软删除, 硬删除释放两个键.
+    停用规则退出替换和反查但仍占用键, 硬删除或改绑/复用别名可能改变历史标记的恢复含义.
+
+    DBDump version 保持 1, 导出规则数组始终为数组且空时为 []; 旧版本 0/1 缺失, null 或空数组不删除已有规则.
+    同 source/alias 映射导入幂等跳过, 保留目标 ID 和 enabled; 新映射保留备份 ID, 主键或任一键冲突回滚全部业务表.
+    PostgreSQL 显式 ID 导入后在同事务 Commit 前取得 SHARE ROW EXCLUSIVE 锁, 通过 pg_get_serial_sequence 获取实际序列,
+    setval 为 GREATEST(COALESCE(MAX(id), 0), nextval(sequence)), is_called=true, 下次创建高于表内最大 ID 且不倒退.
+    序列变化本身不随 PostgreSQL 事务回滚, 失败可能留下空号; SQLite/MySQL 沿用其显式主键插入的序列行为.
+    规则表, 日志和备份仍可能含明文, 不自动清理或加密.
   '''
 }
 
@@ -173,7 +224,7 @@ Table relay_logs {
   time bigint [note: '请求开始时间, Unix 时间戳, 单位秒.']
   request_model_name text [note: '请求模型, 指定渠道直连时包含渠道名称前缀.']
   request_api_key_name text [note: '请求 API Key 名称快照, 无 API Key 外键.']
-  channel_id integer [note: '最终渠道 ID, Go 字段 ChannelId, JSON 键为 channel; 0 表示没有实际渠道, 无数据库外键.']
+  channel_id integer [note: '最终渠道 ID, 优先最后实际执行过原始 usage 观测的渠道, 否则按成功/最后失败尝试选择. Go 字段 ChannelId, JSON 键为 channel; 0 表示无可归因渠道, 无数据库外键.']
   channel_name text [note: '渠道名称快照.']
   actual_model_name text [note: '路由选定的实际模型快照, 指定渠道直连时不含渠道前缀; 参数覆盖改写 model 时, 此字段不保证与最终上游请求体一致.']
   input_tokens integer [note: '输入 Token 数.']
@@ -193,10 +244,18 @@ Table relay_logs {
     model_name string: 此次尝试选定的模型快照; 不记录参数覆盖对 model 的后续改写.
     attempt_num integer: 尝试序号.
     status string: Go AttemptStatus, success=成功, failed=失败, circuit_break=熔断跳过, skipped=其他原因跳过.
+    本地隐私失败或取消可记 skipped 而最终请求失败, 不触发 Key 冷却或渠道失败/熔断, 真实上游错误保留原归因.
+    skipped 不证明上游未执行, 已捕获真实 usage/cost 仍保存并归实际渠道和 Key, 不按还原正文估算.
     duration integer: 耗时毫秒.
     sticky boolean: 是否命中会话保持, omitempty.
     msg string: 错误或跳过原因, omitempty.
     ID 和名称作为审计快照保存, JSON 内不建立数据库外键, omitempty 只影响 JSON 输出.
+  ''']
+  privacy_triggered boolean [not null, default: false, note: '''
+    请求级触发布尔, Go PrivacyTriggered, JSON/列名均为 privacy_triggered, 无 omitempty.
+    仅实际出站采用变化的正文或实际写回成功提交变化内容至少一次才 true, 多次尝试逻辑 OR.
+    功能启用, 扫描无变化, 候选编译或放弃未提交改写不置 true; continue 可能部分改写后失败, true 不保证完整脱敏.
+    旧日志或备份缺失字段为 false. 原请求日志仍基于内部请求和参数覆盖, 不回写替换后的出站 Body.
   ''']
   total_attempts integer [note: '总尝试次数.']
 
@@ -259,8 +318,14 @@ Table migration_records {
 
   Note: '''
     内部迁移记录, 对应 migrate.MigrationRecord, 源码 internal/db/migrate/migrate.go.
-    成功版本启动时跳过, 失败版本可重试. 当前迁移版本为 1-5.
-    BeforeAutoMigrate: 3 渠道协议数字转字符串, 4 分组请求选项, 5 用户 TOTP 密钥.
+    成功版本启动时跳过, 失败版本可重试. 当前迁移版本为 1-6.
+    BeforeAutoMigrate: 3 渠道协议数字转字符串, 4 分组请求选项, 5 用户 TOTP 密钥, 6 SQLite 隐私规则专用建表及双唯一索引.
+    006 对 MySQL/PostgreSQL 不执行 DDL, 新表另走静默 AutoMigrate; RelayLog.privacy_triggered 沿用通用 AutoMigrate.
+    任意隐私 DDL 前先检查已存在对象并静默验证完整结构, 不允许先自动迁移修复未知结构.
+    SQLite 验证列类型/非空/默认/主键, 六个 CHECK 及两个完整非 partial 单列唯一索引;
+    MySQL 验证 VARBINARY 字节长度和完整独立唯一索引, PostgreSQL 验证 BYTEA, 自增序列和默认操作符类的完整独立唯一索引.
+    新表创建后及每次启动迁移结束均重新验证, 不依赖版本 6 的成功记录; 不兼容返回固定错误并终止启动, 不自动重建或转换.
+    Before/AfterAutoMigrate 执行后清空注册表, 独立进程重启才等价于实际再次启动.
     AfterAutoMigrate: 1 渠道密钥和基础 URL 数据迁移, 2 删除旧渠道列.
   '''
 }

@@ -1,19 +1,23 @@
 package relay
 
 import (
+    "bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"net/http"
+    "net/http/httptrace"
 	"slices"
 	"strings"
+    "sync/atomic"
 	"time"
 
 	"github.com/bestruirui/octopus/internal/helper"
 	dbmodel "github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
+    "github.com/bestruirui/octopus/internal/privacy"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/utils/log"
@@ -40,26 +44,33 @@ func Handler(inboundType llm.APIFormat) gin.HandlerFunc {
 }
 
 func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transformer.Inbound) (*relayRun, error) {
-	internalRequest, err := parseRequest(c, inboundType, inAdapter)
+    var snapshot *privacy.Snapshot
+    if !privacyExcludedFormat(inboundType) {
+        snapshot = op.PrivacySnapshot()
+    }
+    internalRequest, err := parseRequest(c, inboundType, inAdapter, snapshot)
 	if err != nil {
 		return nil, err
+    }
+    if internalRequest.RequestType == llm.RequestTypeEmbedding || internalRequest.RequestType == llm.RequestTypeImage {
+        snapshot = nil
 	}
 	passthroughEnabled := passthroughEnabledSnapshot()
 
 	group, groupErr := op.GroupGetEnabledMap(internalRequest.Model, c.Request.Context())
 	if groupErr != nil {
 		if !strings.Contains(internalRequest.Model, "/") {
-			resp.Error(c, http.StatusNotFound, "model not found")
+            writeRelayError(c, snapshot, nil, http.StatusNotFound, "model not found")
 			return nil, groupErr
 		}
-		if err := validateDirectChannelModelAccess(c); err != nil {
+        if err := validateDirectChannelModelAccess(c, snapshot); err != nil {
 			return nil, err
 		}
 		channelName, modelName, _ := splitDirectChannelModel(internalRequest.Model)
-		return newDirectChannelRelayRun(c, inboundType, inAdapter, internalRequest, channelName, modelName, passthroughEnabled)
+        return newDirectChannelRelayRun(c, inboundType, inAdapter, internalRequest, channelName, modelName, passthroughEnabled, snapshot)
 	}
 
-	if err := validateSupportedModel(c, internalRequest.Model); err != nil {
+    if err := validateSupportedModel(c, internalRequest.Model, snapshot); err != nil {
 		return nil, err
 	}
 
@@ -67,7 +78,7 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 	iter := balancer.NewIterator(group, apiKeyID, internalRequest.Model)
 	if iter.Len() == 0 {
 		err := errors.New("no available channel")
-		resp.Error(c, http.StatusServiceUnavailable, err.Error())
+        writeRelayError(c, snapshot, nil, http.StatusServiceUnavailable, err.Error())
 		return nil, err
 	}
 
@@ -86,6 +97,7 @@ func newRelayRun(c *gin.Context, inboundType llm.APIFormat, inAdapter transforme
 		iter:               iter,
 		group:              group,
 		passthroughEnabled: passthroughEnabled,
+        privacySnapshot:    snapshot,
 	}, nil
 }
 
@@ -94,23 +106,23 @@ func passthroughEnabledSnapshot() bool {
 	return err == nil && enabled
 }
 
-func validateSupportedModel(c *gin.Context, requestModel string) error {
+func validateSupportedModel(c *gin.Context, requestModel string, snapshot *privacy.Snapshot) error {
 	if supportedModels := c.GetString("supported_models"); supportedModels != "" {
 		if !slices.Contains(strings.Split(supportedModels, ","), requestModel) {
 			err := errors.New("model not supported")
-			resp.Error(c, http.StatusBadRequest, err.Error())
+            writeRelayError(c, snapshot, nil, http.StatusBadRequest, err.Error())
 			return err
 		}
 	}
 	return nil
 }
 
-func validateDirectChannelModelAccess(c *gin.Context) error {
+func validateDirectChannelModelAccess(c *gin.Context, snapshots ...*privacy.Snapshot) error {
 	if c.GetString("supported_models") == "" {
 		return nil
 	}
 	err := errors.New("model not supported")
-	resp.Error(c, http.StatusBadRequest, err.Error())
+    writeRelayError(c, relaySnapshot(snapshots), nil, http.StatusBadRequest, err.Error())
 	return err
 }
 
@@ -154,6 +166,16 @@ func (r *relayRun) run() {
 			r.metrics.Save(ctx, false, context.Canceled, r.iter.Attempts())
 			return
 		}
+        if isPrivacyFailure(err) {
+            if !written {
+                resp.Error(r.c, http.StatusBadGateway, privacyFailureMessage)
+            }
+            r.metrics.Save(ctx, false, err, r.iter.Attempts())
+            if written {
+                abortPrivacyStream(r.c)
+            }
+            return
+        }
 		if written {
 			r.metrics.Save(ctx, false, err, r.iter.Attempts())
 			return
@@ -168,13 +190,14 @@ func (r *relayRun) run() {
 			lastErr = errors.New("all channels failed")
 		}
 	}
+    status := http.StatusBadGateway
 	if r.routeMode == routeModeDirectChannel {
-		r.metrics.Save(ctx, false, lastErr, r.iter.Attempts())
-		resp.Error(r.c, directChannelFailureStatus(r.iter.Attempts()), lastErr.Error())
-		return
+        status = directChannelFailureStatus(r.iter.Attempts())
+    }
+    if err := writeRelayError(r.c, r.privacySnapshot, r.metrics, status, lastErr.Error()); err != nil {
+        lastErr = err
 	}
 	r.metrics.Save(ctx, false, lastErr, r.iter.Attempts())
-	resp.Error(r.c, http.StatusBadGateway, lastErr.Error())
 }
 
 func (r *relayRun) prepareAttempt() (*relayAttempt, error) {
@@ -248,6 +271,23 @@ func (ra *relayAttempt) run() (bool, error) {
 	span := ra.iter.StartAttempt(ra.channel.ID, ra.usedKey.ID, ra.channel.Name)
 
 	upstreamStatusCode, fwdErr := ra.forward()
+    var cost float64
+    if ra.rawUsage != nil && ra.upstreamExecuted {
+        ra.metrics.executedChannelID = ra.channel.ID
+        ra.metrics.executedChannelName = ra.channel.Name
+        ra.metrics.executedActualModel = ra.metrics.ActualModel
+        cost = ra.metrics.RecordRawUsage(ra.channel.ID, ra.rawUsage.Usage())
+    }
+    // 本地错误和取消保留已观测费用, 不覆盖 Key 的冷却状态.
+    if (isPrivacyFailure(fwdErr) && upstreamStatusCode < http.StatusBadRequest) || errors.Is(fwdErr, errClientDisconnected) {
+        if cost != 0 {
+            _ = op.ChannelKeyAddCost(ra.usedKey.ID, cost)
+        }
+    }
+    if isPrivacyFailure(fwdErr) && upstreamStatusCode < http.StatusBadRequest {
+        span.End(dbmodel.AttemptSkipped, privacyFailureMessage)
+        return ra.c.Writer.Written(), fwdErr
+    }
 	if fwdErr == nil && upstreamStatusCode == 0 {
 		upstreamStatusCode = http.StatusOK
 	}
@@ -255,7 +295,11 @@ func (ra *relayAttempt) run() (bool, error) {
 	ra.usedKey.LastUseTimeStamp = time.Now().Unix()
 
 	if fwdErr == nil {
+        if ra.rawUsage == nil {
 		op.ChannelKeyUpdate(ra.usedKey, ra.metrics.Stats.InputCost+ra.metrics.Stats.OutputCost)
+        } else {
+            op.ChannelKeyUpdate(ra.usedKey, cost)
+        }
 
 		span.End(dbmodel.AttemptSuccess, "")
 		op.StatsChannelUpdate(ra.channel.ID, dbmodel.StatsMetrics{
@@ -269,10 +313,11 @@ func (ra *relayAttempt) run() (bool, error) {
 		return false, nil
 	}
 	if errors.Is(fwdErr, errClientDisconnected) {
+        span.End(dbmodel.AttemptSkipped, errClientDisconnected.Error())
 		return false, fwdErr
 	}
 
-	op.ChannelKeyUpdate(ra.usedKey, 0)
+    op.ChannelKeyUpdate(ra.usedKey, cost)
 	span.End(dbmodel.AttemptFailed, fwdErr.Error())
 	op.StatsChannelUpdate(ra.channel.ID, dbmodel.StatsMetrics{
 		WaitTime:      span.Duration().Milliseconds(),
@@ -280,20 +325,23 @@ func (ra *relayAttempt) run() (bool, error) {
 	})
 	balancer.RecordFailure(ra.channel.ID, ra.usedKey.ID, ra.internalRequest.Model)
 
+    if isPrivacyFailure(fwdErr) {
+        return ra.c.Writer.Written(), fwdErr
+    }
 	return ra.c.Writer.Written(), fmt.Errorf("channel %s failed: %v", ra.channel.Name, fwdErr)
 }
 
 // parseRequest 解析并验证入站请求
-func parseRequest(c *gin.Context, inboundType llm.APIFormat, inAdapter transformer.Inbound) (*llm.Request, error) {
+func parseRequest(c *gin.Context, inboundType llm.APIFormat, inAdapter transformer.Inbound, snapshot *privacy.Snapshot) (*llm.Request, error) {
 	if inAdapter == nil {
 		err := fmt.Errorf("unsupported inbound type: %s", inboundType)
-		resp.Error(c, http.StatusBadRequest, err.Error())
+        writeRelayError(c, snapshot, nil, http.StatusBadRequest, err.Error())
 		return nil, err
 	}
 
 	httpRequest, err := httpclient.ReadHTTPRequest(c.Request)
 	if err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
+        writeRelayError(c, snapshot, nil, http.StatusInternalServerError, err.Error())
 		return nil, err
 	}
 
@@ -303,7 +351,7 @@ func parseRequest(c *gin.Context, inboundType llm.APIFormat, inAdapter transform
 		if errors.Is(err, transformer.ErrInvalidRequest) {
 			statusCode = http.StatusBadRequest
 		}
-		resp.Error(c, statusCode, err.Error())
+        writeRelayError(c, snapshot, nil, statusCode, err.Error())
 		return nil, err
 	}
 	if internalRequest.RawRequest == nil {
@@ -331,6 +379,21 @@ func (ra *relayAttempt) forward() (int, error) {
 	}
 
 	relayMiddleware := &relayPipelineMiddleware{attempt: ra}
+    if ra.privacySnapshot.Active() {
+        var sent atomic.Bool
+        ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+            WroteRequest: func(info httptrace.WroteRequestInfo) {
+                if info.Err == nil {
+                    sent.Store(true)
+                }
+            },
+        })
+        defer func() {
+            if ra.privacyRequestChanged && (sent.Load() || ra.upstreamExecuted || relayMiddleware.upstreamStatusCode >= http.StatusBadRequest) {
+                ra.metrics.PrivacyTriggered = true
+            }
+        }()
+    }
 	passthroughEnabled := ra.canPassthrough()
 	middlewares := []pipeline.Middleware{relayMiddleware}
 	if !passthroughEnabled {
@@ -370,7 +433,12 @@ func (ra *relayAttempt) forward() (int, error) {
 		if isClientDisconnected(ctx, err) {
 			return relayMiddleware.upstreamStatusCode, errClientDisconnected
 		}
-		if statusCode, written := ra.writeDirectChannelUpstreamError(ctx, inbound, err); written {
+        if isPrivacyFailure(err) {
+            return relayMiddleware.upstreamStatusCode, err
+        }
+        if statusCode, written, privacyErr := ra.writeDirectChannelUpstreamError(ctx, inbound, err); privacyErr != nil {
+            return statusCode, privacyErr
+        } else if written {
 			return statusCode, err
 		}
 		return relayMiddleware.upstreamStatusCode, err
@@ -387,7 +455,10 @@ func (ra *relayAttempt) forward() (int, error) {
 	if result.Response == nil {
 		return 0, fmt.Errorf("empty pipeline response")
 	}
-	ra.metrics.InternalResponse = result.Response.Body
+    body, changed, err := ra.restorePrivacyResponse(result.Response.Body)
+    if err != nil {
+        return result.Response.StatusCode, err
+    }
 	statusCode := result.Response.StatusCode
 	if statusCode == 0 {
 		statusCode = http.StatusOK
@@ -401,7 +472,15 @@ func (ra *relayAttempt) forward() (int, error) {
 			contentType = result.Response.Headers.Get("Content-Type")
 		}
 	}
-	ra.c.Data(statusCode, contentType, result.Response.Body)
+    if changed {
+        deleteContentLength(ra.c.Writer.Header())
+    }
+    written, writeErr := writeRelayBody(ra.c, statusCode, contentType, body)
+    ra.metrics.InternalResponse = body[:written]
+    ra.metrics.PrivacyTriggered = ra.metrics.PrivacyTriggered || changed && writeErr == nil
+    if writeErr != nil {
+        return statusCode, writeErr
+    }
 	return statusCode, nil
 }
 
@@ -518,18 +597,86 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 	ra.c.Header("Connection", "keep-alive")
 	ra.c.Header("X-Accel-Buffering", "no")
 
-	firstToken := true
+    var restorer *privacy.StreamRestorer
+    if ra.privacySnapshot.Active() {
+        restorer = privacy.NewStreamRestorer(ra.privacySnapshot, ra.inboundType)
+        defer restorer.Cancel()
+    }
 	responseEvents := make([]*httpclient.StreamEvent, 0, 8)
+    defer func() {
+        if len(responseEvents) == 0 {
+            return
+        }
+        body, meta, err := ra.inAdapter.AggregateStreamChunks(context.WithoutCancel(ctx), responseEvents)
+        if err != nil {
+            log.Warnf("failed to aggregate committed stream for log")
+            return
+        }
+        ra.metrics.InternalResponse = body
+        if ra.rawUsage == nil {
+            ra.metrics.RecordUsage(meta.Usage)
+        }
+    }()
+    commitEvents := func(commits []privacy.StreamCommit) error {
+        for _, commit := range commits {
+            if ctx.Err() != nil {
+                return errClientDisconnected
+            }
+            event := commit.Event
+            if event == nil || len(event.Data) == 0 && event.Type == "" && event.LastEventID == "" {
+                continue
+            }
+            // SSE encoder 会忽略底层 writer 的部分错误. 先在内存编码, 再确认写入结果.
+            var frame bytes.Buffer
+            if err := sse.Encode(&frame, sse.Event{Event: event.Type, Id: event.LastEventID, Data: event.Data}); err != nil {
+                return err
+            }
+            written, err := ra.c.Writer.Write(frame.Bytes())
+            if err != nil || written != frame.Len() {
+                return errClientDisconnected
+            }
+            if err := flushRelayResponse(ra.c); err != nil {
+                return errClientDisconnected
+            }
+            if ra.metrics.FirstTokenTime.IsZero() {
+                ra.metrics.FirstTokenTime = time.Now()
+            }
+            ra.metrics.PrivacyTriggered = ra.metrics.PrivacyTriggered || commit.Changed
+            responseEvents = append(responseEvents, event)
+        }
+        return nil
+    }
+    finishPrivacy := func() error {
+        if restorer == nil {
+            return nil
+        }
+        commits, err := restorer.Finish()
+        if writeErr := commitEvents(commits); writeErr != nil {
+            return writeErr
+        }
+        if err != nil {
+            reportPrivacyFailure(err)
+            if len(commits) == 0 {
+                return err
+            }
+        }
+        return nil
+    }
 	type sseReadResult struct {
 		event *httpclient.StreamEvent
 		err   error
 	}
 	results := make(chan sseReadResult, 1)
 	done := make(chan struct{})
-	defer close(done)
+    readerDone := make(chan struct{})
+    defer func() {
+        close(done)
+        _ = clientStream.Close()
+        <-readerDone
+    }()
 	go func() {
+        defer close(readerDone)
 		defer close(results)
-		defer clientStream.Close()
 		defer func() {
 			if r := recover(); r != nil {
 				log.Warnf("stream reader panic: %v", r)
@@ -562,43 +709,48 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 	for {
 		select {
 		case <-ctx.Done():
-			log.Infof("client disconnected, stopping stream")
-			_ = clientStream.Close()
-			return nil
+            return errClientDisconnected
 		case r, ok := <-results:
+            if ctx.Err() != nil || isClientDisconnected(ctx, r.err) {
+                return errClientDisconnected
+            }
 			if !ok {
-				log.Infof("stream end")
-				if len(responseEvents) == 0 {
-					return nil
-				}
-				// 客户端请求流式时，pipeline 只负责边转边写，不会自动生成完整响应体。
-				// 这里复用同一个 inbound 聚合器把已经写给客户端的事件合成最终 body，日志只落一次最终响应。
-				responseBody, meta, err := ra.inAdapter.AggregateStreamChunks(context.WithoutCancel(ctx), responseEvents)
-				if err != nil {
-					log.Warnf("failed to aggregate stream response for log: %v", err)
-					return nil
-				}
-				ra.metrics.InternalResponse = responseBody
-				ra.metrics.RecordUsage(meta.Usage)
-				return nil
+                return finishPrivacy()
 			}
 			if r.err != nil {
-				log.Warnf("failed to read event: %v", r.err)
+                if err := finishPrivacy(); err != nil {
+                    reportPrivacyFailure(err)
+                }
 				return fmt.Errorf("failed to read stream event: %w", r.err)
 			}
-
-			if r.event == nil || len(r.event.Data) == 0 {
+            if r.event == nil {
 				continue
 			}
-			// 这里只临时保存 pipeline 已经转换好的客户端格式事件，正常结束后聚合成最终响应体用于日志；不会把分片逐条落库。
-			responseEvents = append(responseEvents, r.event)
-			if firstToken {
-				ra.metrics.FirstTokenTime = time.Now()
-				firstToken = false
+            upstreamFailure := isUpstreamStreamFailure(r.event)
+            if restorer == nil {
+                if len(r.event.Data) != 0 {
+                    if err := commitEvents([]privacy.StreamCommit{{Event: r.event}}); err != nil {
+                        return err
 			}
-
-			ra.c.Render(-1, sse.Event{Event: r.event.Type, Id: r.event.LastEventID, Data: r.event.Data})
-			ra.c.Writer.Flush()
+                }
+                if upstreamFailure {
+                    return errUpstreamStreamFailure
+                }
+                continue
+            }
+            commits, err := restorer.Push(r.event)
+            if writeErr := commitEvents(commits); writeErr != nil {
+                return writeErr
+            }
+            if err != nil {
+                reportPrivacyFailure(err)
+            }
+            if upstreamFailure {
+                return errUpstreamStreamFailure
+            }
+            if err != nil && restorer.Closed() {
+                return err
+            }
 		}
 	}
 }
@@ -606,7 +758,7 @@ func (ra *relayAttempt) writeStream(ctx context.Context, clientStream streams.St
 // relayPipelineMiddleware 承接 octopus 自己的请求级副作用：
 // 1. 在 pipeline 发出上游请求前应用分组与渠道的参数覆盖和自定义 header；
 // 2. 在上游失败时保存 HTTP 状态码，供 key 冷却、熔断和后续选路使用；
-// 3. 在非流式响应转成 llm.Response 后记录 usage。
+// 3. 在协议转换前观测原始 usage, 其他请求沿用转换后的 usage.
 // axonhub/llm 只提供了部分函数式 middleware 构造器，错误状态码和 llm 响应 usage 这两个回调没有公开构造器，
 // 所以这里保留一个很薄的结构体实现完整接口，而不是在 relay 主流程里重复 pipeline 的执行逻辑。
 type relayPipelineMiddleware struct {
@@ -624,6 +776,24 @@ func (m *relayPipelineMiddleware) OnOutboundRawRequest(ctx context.Context, requ
 		request.Headers = make(http.Header)
 	}
 	m.attempt.applyRequestOptions(request)
+    if !m.attempt.privacySnapshot.Active() {
+        return request, nil
+    }
+    format := llm.APIFormat(request.APIFormat)
+    m.attempt.rawUsage = newRawUsageCapture(format)
+    body, changed, err := m.attempt.privacySnapshot.RewriteRequest(format, request.Body)
+    if err != nil {
+        reportPrivacyFailure(err)
+        if m.attempt.privacySnapshot.Config().FailurePolicy == privacy.Abort {
+            return nil, err
+        }
+        return request, nil
+    }
+    if changed {
+        deleteContentLength(request.Headers)
+        request.Body = body
+        m.attempt.privacyRequestChanged = true
+    }
 	return request, nil
 }
 
@@ -632,11 +802,31 @@ func (m *relayPipelineMiddleware) OnOutboundRawError(ctx context.Context, err er
 	if errors.As(err, &upstreamErr) {
 		// pipeline 会把上游错误转换成统一错误返回；这里在转换前记录原始 HTTP 状态码，用于渠道 key 的后续调度决策。
 		m.upstreamStatusCode = upstreamErr.StatusCode
+        if m.attempt.rawUsage != nil {
+            m.attempt.upstreamExecuted = true
+            m.attempt.rawUsage.ObserveJSON(upstreamErr.Body)
+        }
 	}
 }
 
+func (m *relayPipelineMiddleware) OnOutboundRawResponse(_ context.Context, response *httpclient.Response) (*httpclient.Response, error) {
+    if response != nil && m.attempt.rawUsage != nil {
+        m.attempt.upstreamExecuted = true
+        m.attempt.rawUsage.ObserveJSON(response.Body)
+    }
+    return response, nil
+}
+
+func (m *relayPipelineMiddleware) OnOutboundRawStream(_ context.Context, upstream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*httpclient.StreamEvent], error) {
+    if m.attempt.rawUsage != nil {
+        m.attempt.upstreamExecuted = true
+        upstream = m.attempt.rawUsage.Wrap(upstream)
+    }
+    return upstream, nil
+}
+
 func (m *relayPipelineMiddleware) OnOutboundLlmResponse(ctx context.Context, response *llm.Response) (*llm.Response, error) {
-	if response != nil {
+    if response != nil && m.attempt.rawUsage == nil {
 		// 非流式 usage 已由 outbound transformer 标准化到 llm.Response；流式 usage 在最终聚合时记录，避免重复计数。
 		m.attempt.metrics.RecordUsage(response.Usage)
 	}

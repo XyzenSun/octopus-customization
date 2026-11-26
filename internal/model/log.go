@@ -40,5 +40,6 @@ type RelayLog struct {
 	ResponseContent   string           `json:"response_content"`                         // 响应内容
 	Error             string           `json:"error"`                                    // 错误信息
 	Attempts          []ChannelAttempt `json:"attempts" gorm:"serializer:json"`          // 所有尝试记录
-	TotalAttempts     int              `json:"total_attempts"`                           // 总尝试次数
+    PrivacyTriggered  bool             `json:"privacy_triggered" gorm:"not null;default:false"`
+    TotalAttempts     int              `json:"total_attempts"` // 总尝试次数
 }

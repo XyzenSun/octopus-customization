@@ -8,7 +8,7 @@ namespace Octopus;
 @operationId("listRelayLogs")
 @tag("Log")
 @summary("分页查询转发日志")
-@doc("先按时间条件筛选内存缓存, 再反转缓存追加顺序并分页. 启用 relay_log_keep_enabled 时, 不足部分从数据库按 id DESC 补足; 关闭时不读取数据库历史日志. 不是缓存和数据库整体按 time 排序, 也不是原子快照. 不返回总数或 has_more. 普通越界页返回 data: null. page 没有业务上限, offset 计算未检查整数溢出, 极大值存在触发 recovery 500 的风险. Source: internal/server/handlers/log.go:39-74; internal/op/log.go:273-335.")
+@doc("先按时间条件筛选内存缓存, 再反转缓存追加顺序并分页. 启用 relay_log_keep_enabled 时, 不足部分从数据库按 id DESC 补足; 关闭时不读取数据库历史日志. 不是缓存和数据库整体按 time 排序, 也不是原子快照. 不返回总数或 has_more. 每条使用 RelayLog 实体, privacy_triggered 始终输出布尔, 旧日志为 false; true 仅表示实际采用了出站变化或成功提交过写回变化, 多次尝试 OR, continue 仍可能部分改写后失败, 不代表全部脱敏成功. 原请求日志保持内部请求序列化及参数覆盖, 不回写脱敏 Body; 响应日志保留实际写回的正文片段或成功提交事件的聚合结果, 写失败不等于整份候选已提交, 日志可能含明文, 不自动清理或加密. 用量基于活跃隐私对话的转换前原始上游 usage, 不按还原文本估算; 已捕获用量在 continue/abort/取消时保留. 实际渠道归因见 RelayLog.channel, 本地隐私失败的 skipped 不保证上游未执行. 普通越界页返回 data: null. page 没有业务上限, offset 计算未检查整数溢出, 极大值存在触发 recovery 500 的风险. Source: internal/server/handlers/log.go:39-74; internal/op/log.go:273-335.")
 op listRelayLogs(
   @doc("缺失时默认为 1. 使用 strconv.Atoi 解析, 错误被忽略; 普通非数字输入解析为 0 后回退为 1, 小于 1 也回退为 1. 没有业务最大值, 整数解析范围取决于编译架构. 不应理解为非法输入返回 400.")
   @query(#{ name: "page", explode: true })
@@ -82,7 +82,7 @@ op createLogStreamToken():
 @summary("订阅实时转发日志")
 @doc("由 StreamToken 安全方案表达 query token, 不要求 JWT. 缺失, 未知或已吊销 token 返回 401 JSON. token 没有 TTL, 校验和吊销不是原子消费, 并发连接可能同时通过. 校验后立即吊销, 后续连接失败也不能重用. 每帧为 data: <RelayLog JSON> 后接两个换行, 不使用成功包装. 无初始事件, 心跳, event, id, retry, 回放或断点续传, 只推送订阅后的日志. 每订阅缓冲 10 条, 满时静默丢帧; marshal 失败跳过该帧, Write 错误被忽略, 不发送结构化 SSE 错误. 日志通知为异步且可早于数据库写入, 不保证顺序或可靠持久化. 首条日志前没有主动 Write 或 Flush, 响应头何时被客户端或代理观察到未做运行确认. 客户端 context 结束后退订. Source: internal/server/handlers/log.go:94-129; internal/op/log.go:33-87,137-181.")
 @useAuth(StreamToken)
-@returnsDoc("持续 SSE 文本流. 每条 data 载荷符合 RelayLog, 不含统一响应包装.")
+@returnsDoc("持续 SSE 文本流. 每条 data 载荷符合 RelayLog, 不含统一响应包装, privacy_triggered 始终为布尔. true 只标记实际采用/提交过的变化, 不是完整脱敏保证; 旧日志或备份缺字段视为 false. 日志正文可能含明文. 这是日志订阅流, 不执行对话流的 marker 恢复或原始 usage 观测.")
 op streamRelayLogs():
   | {
       ...HttpResponse<
@@ -116,5 +116,5 @@ union ListRelayLogsStatus200application_jsonDataValue {
   null,
 }
 
-@doc("重复的 data: <RelayLog JSON>\\n\\n 文本帧.")
+@doc("重复的 data: <RelayLog JSON>\\n\\n 文本帧, RelayLog.privacy_triggered 始终输出布尔, 无管理包装. 字段含义与分页日志和 DBDump 共用实体定义, 不把触发状态当作完整脱敏证明.")
 scalar StreamRelayLogsStatus200text_event_streamValue extends string;

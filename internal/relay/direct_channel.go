@@ -10,8 +10,8 @@ import (
 
 	dbmodel "github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
+    "github.com/bestruirui/octopus/internal/privacy"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
-	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/utils/xstrings"
 	"github.com/gin-gonic/gin"
 	"github.com/looplj/axonhub/llm"
@@ -31,20 +31,22 @@ func newDirectChannelRelayRun(
 	channelName string,
 	modelName string,
 	passthroughEnabled bool,
+    snapshots ...*privacy.Snapshot,
 ) (*relayRun, error) {
+    snapshot := relaySnapshot(snapshots)
 	channel, err := op.ChannelGetByName(channelName, c.Request.Context())
 	if err != nil {
-		resp.Error(c, http.StatusNotFound, "channel not found")
+        writeRelayError(c, snapshot, nil, http.StatusNotFound, "channel not found")
 		return nil, err
 	}
 	if !channel.Enabled {
 		err := errors.New("no available channel")
-		resp.Error(c, http.StatusServiceUnavailable, err.Error())
+        writeRelayError(c, snapshot, nil, http.StatusServiceUnavailable, err.Error())
 		return nil, err
 	}
 	if !channelSupportsModel(channel.Model, channel.CustomModel, modelName) {
 		err := errors.New("model not found")
-		resp.Error(c, http.StatusNotFound, err.Error())
+        writeRelayError(c, snapshot, nil, http.StatusNotFound, err.Error())
 		return nil, err
 	}
 
@@ -64,6 +66,7 @@ func newDirectChannelRelayRun(
 		iter:               balancer.NewSingleIterator(channel.ID, modelName),
 		routeMode:          routeModeDirectChannel,
 		passthroughEnabled: passthroughEnabled,
+        privacySnapshot:    snapshot,
 	}, nil
 }
 
@@ -87,26 +90,37 @@ func channelSupportsModel(modelNames, customModelNames, target string) bool {
 	return false
 }
 
-func (ra *relayAttempt) writeDirectChannelUpstreamError(ctx context.Context, inbound transformer.Inbound, err error) (int, bool) {
+func (ra *relayAttempt) writeDirectChannelUpstreamError(ctx context.Context, inbound transformer.Inbound, err error) (int, bool, error) {
 	if ra.routeMode != routeModeDirectChannel || !pipeline.IsUpstreamError(err) {
-		return 0, false
+        return 0, false, nil
 	}
 	var responseErr *llm.ResponseError
 	if !errors.As(err, &responseErr) || responseErr.StatusCode < http.StatusBadRequest {
-		return 0, false
+        return 0, false, nil
 	}
 
 	clientErr := inbound.TransformError(ctx, err)
 	if clientErr == nil || clientErr.StatusCode < http.StatusBadRequest {
-		return 0, false
+        return 0, false, nil
+    }
+    body, changed, privacyErr := restorePrivacyError(ra.privacySnapshot, clientErr.Body)
+    if privacyErr != nil {
+        return responseErr.StatusCode, false, privacyErr
 	}
 	contentType := "application/json"
 	if clientErr.Headers != nil && clientErr.Headers.Get("Content-Type") != "" {
 		contentType = clientErr.Headers.Get("Content-Type")
 	}
-	ra.metrics.InternalResponse = append([]byte(nil), clientErr.Body...)
-	ra.c.Data(clientErr.StatusCode, contentType, clientErr.Body)
-	return clientErr.StatusCode, true
+    if changed {
+        deleteContentLength(ra.c.Writer.Header())
+    }
+    written, writeErr := writeRelayBody(ra.c, clientErr.StatusCode, contentType, body)
+    ra.metrics.InternalResponse = append([]byte(nil), body[:written]...)
+    ra.metrics.PrivacyTriggered = ra.metrics.PrivacyTriggered || changed && writeErr == nil
+    if writeErr != nil {
+        return clientErr.StatusCode, ra.c.Writer.Written(), writeErr
+    }
+    return clientErr.StatusCode, true, nil
 }
 
 func directChannelFailureStatus(attempts []dbmodel.ChannelAttempt) int {

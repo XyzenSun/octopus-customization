@@ -1,6 +1,6 @@
 # Octopus HTTP 契约维护
 
-`main.tsp` 是入口, `management.tsp` 维护管理数据模型, `protocols.tsp` 维护 LLM 协议模型, `responses.tsp` 复用 HTTP 响应包装. `operations.tsp` 只导入 `operations/` 下按现有 11 个业务标签拆分的操作文件, 操作专用辅助模型与操作放在同一模块. 这些 `.tsp` 文件是唯一维护来源, `../openapi.yaml` 仅由 OpenAPI emitter 生成. Markdown 只记录维护方法与迁移决策, 不另列接口字段.
+`main.tsp` 是入口, `management.tsp` 维护管理数据模型, `protocols.tsp` 维护 LLM 协议模型, `responses.tsp` 复用 HTTP 响应包装. `operations.tsp` 只导入 `operations/` 下按现有 12 个业务标签拆分的操作文件, 操作专用辅助模型与操作放在同一模块. 这些 `.tsp` 文件是唯一维护来源, `../openapi.yaml` 仅由 OpenAPI emitter 生成. Markdown 只记录维护方法与迁移决策, 不另列接口字段.
 
 日常修改从对应的 `operations/<模块>.tsp` 开始, 再按引用读取相关模型和公共响应, 无需先读取全部操作或生成的 OpenAPI. 例如渠道操作从 `operations/channel.tsp` 进入; 只有变更影响其他模块时才扩大阅读范围.
 

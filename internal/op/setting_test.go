@@ -2,6 +2,7 @@ package op
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,11 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+	if *octopusPrivacyWorker {
+		os.Exit(m.Run())
+	}
+
 	testDir, err := os.MkdirTemp("", "octopus-op-test-")
 	if err != nil {
 		panic(err)

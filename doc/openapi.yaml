@@ -5,11 +5,11 @@ info:
   description: |-
     doc/typespec/*.tsp 是 Octopus HTTP 接口的唯一维护契约, 本 OpenAPI 文件由 TypeSpec 生成, 替代已废弃的 doc/API.md. version 表示文档版本, 运行程序版本通过 /api/v1/update/now-version 查询.
 
-    契约依据当前 Go 路由, handler, model, op 和 go.mod 固定的 axonhub/llm 实现编写, 覆盖 60 个显式业务接口. 管理接口通常使用 /api/v1 前缀, LLM 兼容接口使用 /v1 前缀. 静态资源, CORS, 框架重定向和未匹配路由不在本契约范围内.
+    契约依据当前 Go 路由, handler, model, op 和 go.mod 固定的 axonhub/llm 实现编写, 覆盖 64 个显式业务接口. 管理接口通常使用 /api/v1 前缀, LLM 兼容接口使用 /v1 前缀. 静态资源, CORS, 框架重定向和未匹配路由不在本契约范围内.
 
     管理成功响应包含 code: 200 和 message: success. 有业务载荷时包含 data, resp.Success(c, nil) 时省略 data. 有类型的空切片可能序列化为 null 或 [], 应按各接口 schema 判断. 本地错误使用 code 和 message, code 等于 HTTP 状态码. 指定渠道直连的特定上游 HTTP 错误按入站协议转换, 分组路由最终失败使用 Octopus 错误包装.
 
-    分组路由先精确匹配完整请求模型. 分组不存在时, 可按第一个 / 将请求模型解析为 channelName/modelName, 执行一次指定渠道直连. 非空 supported_models 限制的 API Key 不允许指定渠道直连. 协议直通是协议一致时的转发优化, 保留原始协议扩展, 仍遵循选路和鉴权. 分组请求选项先应用, 渠道请求选项随后覆盖; 指定渠道直连只应用渠道请求选项.
+    分组路由先精确匹配完整请求模型. 分组不存在时, 可按第一个 / 将请求模型解析为 channelName/modelName, 执行一次指定渠道直连. 非空 supported_models 限制的 API Key 不允许指定渠道直连. 协议直通是协议一致时的转发优化, 保留原始协议扩展, 仍遵循选路和鉴权. 已启用的隐私处理仍在实际出站和客户端写回边界改写选定文本, 不处理 embedding 或图片接口; 触发布尔值不代表全部内容成功脱敏. 分组请求选项先应用, 渠道请求选项随后覆盖; 指定渠道直连只应用渠道请求选项.
 
     本契约记录现有行为, 不承诺数据库标签对应 HTTP 校验, 也不承诺所有上游扩展字段或跨协议能力无损兼容. 请求 schema 保持未知属性开放; schema 的类型表达不覆盖 Go 对 null 的全部宽松解析行为. 注明的实现风险尚未修复. 已进行源码静态审查, 未调用真实 API, 未验证数据库驱动差异, 运行配置或上游能力. Scalar 预览和 OpenAPI 校验不构成运行时验证.
 tags:
@@ -25,6 +25,8 @@ tags:
     description: 转发日志查询, 清理和 SSE 推送.
   - name: Setting
     description: 运行期设置与数据库表导入, 导出.
+  - name: Privacy
+    description: 隐私规则管理, 请求快照与数据脱敏配置.
   - name: Circuit
     description: 渠道级内存熔断状态与重置.
   - name: Model
@@ -1018,7 +1020,7 @@ paths:
     get:
       operationId: listRelayLogs
       summary: 分页查询转发日志
-      description: '先按时间条件筛选内存缓存, 再反转缓存追加顺序并分页. 启用 relay_log_keep_enabled 时, 不足部分从数据库按 id DESC 补足; 关闭时不读取数据库历史日志. 不是缓存和数据库整体按 time 排序, 也不是原子快照. 不返回总数或 has_more. 普通越界页返回 data: null. page 没有业务上限, offset 计算未检查整数溢出, 极大值存在触发 recovery 500 的风险. Source: internal/server/handlers/log.go:39-74; internal/op/log.go:273-335.'
+      description: '先按时间条件筛选内存缓存, 再反转缓存追加顺序并分页. 启用 relay_log_keep_enabled 时, 不足部分从数据库按 id DESC 补足; 关闭时不读取数据库历史日志. 不是缓存和数据库整体按 time 排序, 也不是原子快照. 不返回总数或 has_more. 每条使用 RelayLog 实体, privacy_triggered 始终输出布尔, 旧日志为 false; true 仅表示实际采用了出站变化或成功提交过写回变化, 多次尝试 OR, continue 仍可能部分改写后失败, 不代表全部脱敏成功. 原请求日志保持内部请求序列化及参数覆盖, 不回写脱敏 Body; 响应日志保留实际写回的正文片段或成功提交事件的聚合结果, 写失败不等于整份候选已提交, 日志可能含明文, 不自动清理或加密. 用量基于活跃隐私对话的转换前原始上游 usage, 不按还原文本估算; 已捕获用量在 continue/abort/取消时保留. 实际渠道归因见 RelayLog.channel, 本地隐私失败的 skipped 不保证上游未执行. 普通越界页返回 data: null. page 没有业务上限, offset 计算未检查整数溢出, 极大值存在触发 recovery 500 的风险. Source: internal/server/handlers/log.go:39-74; internal/op/log.go:273-335.'
       parameters:
         - name: page
           in: query
@@ -1088,7 +1090,7 @@ paths:
       parameters: []
       responses:
         '200':
-          description: 持续 SSE 文本流. 每条 data 载荷符合 RelayLog, 不含统一响应包装.
+          description: 持续 SSE 文本流. 每条 data 载荷符合 RelayLog, 不含统一响应包装, privacy_triggered 始终为布尔. true 只标记实际采用/提交过的变化, 不是完整脱敏保证; 旧日志或备份缺字段视为 false. 日志正文可能含明文. 这是日志订阅流, 不执行对话流的 marker 恢复或原始 usage 观测.
           headers:
             Cache-Control:
               required: false
@@ -1494,11 +1496,221 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
       tags:
         - Model
+  /api/v1/privacy/create:
+    post:
+      operationId: createPrivacyRule
+      summary: 创建隐私规则
+      description: 'Auth 后执行 RequireJSON, Content-Type 必须包含大小写敏感子串 application/json, 不通用支持 +json. source/alias 必填, enabled 省略为 true, 显式 false 保留, null 拒绝. 创建输入的 id 可省略或为 null; 提供非 null 值时必须能被当前架构的 Go int JSON 解码, 字符串等错误类型返回 400, 不检查正数. 数据库生成正自增 id, 不采用客户端 id 值. source 与 alias 分别全表唯一, 停用规则仍占用键. 候选规则及完整隐私配置校验/编译和事务提交成功后一次发布, 失败保留旧快照; 功能开关, 四范围及失败策略见 Setting, 当前请求不因管理更新切换版本. 停用项退出后续请求的替换及反查, 不释放唯一键. 日志/规则/备份仍可能含明文, 不自动清理或加密. 错误只使用固定文本. Source: internal/server/handlers/privacy.go; internal/model/privacy.go; internal/op/privacy.go.'
+      parameters: []
+      responses:
+        '200':
+          description: 已提交规则, 包括数据库生成的 ID 和实际 enabled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PrivacyRule'
+                allOf:
+                  - $ref: '#/components/schemas/SuccessBase'
+        '400':
+          description: 缺少 Authorization, JSON 解析失败或规则校验失败.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT 校验失败, 或 API Key 无效, 禁用, 过期, 累计成本超过正额度上限. 返回 Octopus 错误包装.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: source 或 alias 冲突, message 为 privacy rule conflict, 不返回冲突值.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Content-Type 未包含大小写敏感的 application/json 子串. RequireJSON 不检查 JSON 内容; 语法错误由接口解析处理. 有鉴权的路由先执行鉴权, 公开登录不要求先认证.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 编译失败或存储等内部失败, 仅固定文本, 不泄露参数.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      tags:
+        - Privacy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivacyRuleCreate'
+  /api/v1/privacy/delete/{id}:
+    delete:
+      operationId: deletePrivacyRule
+      summary: 硬删除隐私规则
+      description: 'Auth 后 RequireJSON, DELETE 不要求 Content-Type 或 body. id 使用 strconv.Atoi 且要求正数. 硬删除不保留旧映射, 释放 source/alias 唯一键, 接受别名复用改变历史标记反查含义. 不存在明确返回 404. 提交成功后发布, 当前请求仍保持旧快照. 成功省略 data, 不是 data:null. Source: internal/server/handlers/privacy.go; internal/op/privacy.go.'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: 规则 ID, 必须能解析为当前架构的 Go int 且大于 0.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: 已硬删除规则, 响应省略 data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmptySuccess'
+        '400':
+          description: 缺少 Authorization, 或 ID 非法/非正数.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT 校验失败, 或 API Key 无效, 禁用, 过期, 累计成本超过正额度上限. 返回 Octopus 错误包装.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 规则不存在, message 为 privacy rule not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 编译失败或存储等内部失败, 仅固定文本, 不泄露参数.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      tags:
+        - Privacy
+  /api/v1/privacy/list:
+    get:
+      operationId: listPrivacyRules
+      summary: 获取全部隐私规则
+      description: '管理 JWT 鉴权, 不接受普通 API Key. RequireJSON 对 GET 放行, 不要求 Content-Type 或 body. 按 id 升序返回全部规则, 包含停用规则, 空集合为 data: []. source/alias 明文返回, 不包含匹配次数或会话数据. 读取或内部失败仅返回固定错误, 不暴露数据库错误或映射参数. Source: internal/server/handlers/privacy.go; internal/op/privacy.go.'
+      parameters: []
+      responses:
+        '200':
+          description: 按 id 升序的全部规则, 空列表为 [].
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PrivacyRule'
+                allOf:
+                  - $ref: '#/components/schemas/SuccessBase'
+        '400':
+          description: Authorization 缺失或为空. HTTP 400, message 为 Invalid request parameters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT 校验失败, 或 API Key 无效, 禁用, 过期, 累计成本超过正额度上限. 返回 Octopus 错误包装.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 固定隐私内部错误, 不含原数据库错误或敏感参数.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      tags:
+        - Privacy
+  /api/v1/privacy/update:
+    post:
+      operationId: updatePrivacyRule
+      summary: 完整更新或启停隐私规则
+      description: 'Auth 后 RequireJSON. 更新必须提供正整数 id 和完整 source/alias/enabled, 缺失字段不隐式覆盖旧值. source/alias 不 trim 或归一化, false 显式保存. 未找到返回 404, 双唯一冲突返回 409, 失败不发布候选快照. 不提供单独 enabled patch. 当前请求继续使用原规则/配置快照, 管理写入只影响后续请求. 硬删除或改绑/复用别名可能改变历史标记反查含义, 不保留历史映射或会话关联. Source: internal/server/handlers/privacy.go; internal/model/privacy.go; internal/op/privacy.go.'
+      parameters: []
+      responses:
+        '200':
+          description: 完整保存后的规则, 同值更新也成功.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PrivacyRule'
+                allOf:
+                  - $ref: '#/components/schemas/SuccessBase'
+        '400':
+          description: 缺少 Authorization, JSON 解析失败或规则/ID 校验失败.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: JWT 校验失败, 或 API Key 无效, 禁用, 过期, 累计成本超过正额度上限. 返回 Octopus 错误包装.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: 规则不存在, message 为 privacy rule not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: source 或 alias 冲突, message 为 privacy rule conflict, 不返回冲突值.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Content-Type 未包含大小写敏感的 application/json 子串. RequireJSON 不检查 JSON 内容; 语法错误由接口解析处理. 有鉴权的路由先执行鉴权, 公开登录不要求先认证.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: 编译失败或存储等内部失败, 仅固定文本, 不泄露参数.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      tags:
+        - Privacy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivacyRuleUpdate'
   /api/v1/setting/export:
     get:
       operationId: exportDatabase
       summary: 导出数据库数据
-      description: '成功直接返回 DBDump JSON 文件, 不使用统一响应包装. 逐表查询数据库, 不先 flush 日志, 统计或 ChannelKey 运行缓存, 没有导出事务, 不是原子或完整运行态快照. 不包含用户, 密码, 2FA 密钥, 迁移表或启动配置, settings 过滤 two_factor_enabled. Channel 和 Group 查询不 Preload 关联, 密钥和分组项分别位于顶层 channel_keys 和 group_items. 导出内容可能包含明文渠道密钥和 API Key, 应作为敏感备份保管. include_stats 导出的小时表是滚动数据库表, 不是 /stats/hourly 的今天补零结果. Source: internal/server/handlers/setting.go:90-102; internal/op/backup.go:16-76,213-221.'
+      description: '成功直接返回 DBDump JSON 文件, 不使用统一响应包装. 持同一隐私写锁并逐表使用静默只读事务查询, 保证通过正式隐私写入口发布的规则和三个设置为一致版本; 不先 flush 日志, 统计或 ChannelKey 运行缓存, 不保证全部运行态已落库或完整原子快照. 不包含用户, 密码, 2FA 密钥, 迁移表或启动配置, settings 过滤 two_factor_enabled. privacy_rules 始终输出非 null 数组, 含停用项, 空集合为 [], 不受 include_stats/include_logs 控制. Channel 和 Group 查询不 Preload 关联, 密钥和分组项分别位于顶层 channel_keys 和 group_items. 规则 source/alias, 日志正文, 渠道密钥和 API Key 可能为明文, 不自动清理或加密, 应作为敏感备份保管. include_stats 导出的小时表是滚动数据库表, 不是 /stats/hourly 的今天补零结果. Source: internal/server/handlers/setting.go; internal/op/backup.go.'
       parameters:
         - name: include_logs
           in: query
@@ -1552,11 +1764,11 @@ paths:
     post:
       operationId: importDatabase
       summary: 增量导入数据库数据
-      description: '不使用 RequireJSON. Content-Type 大小写敏感地包含 multipart/form-data 时读取文件字段 file, 其他 Content-Type 或缺失头均把原始 body 作为 JSON 解码. application/octet-stream 仅代表其他媒体类型的直接 JSON 路径, 不是限定只接受这里列出的媒体类型. 文件后缀和 part MIME 不做业务校验, handler 使用 io.ReadAll 且没有显式大小限制. 先按裸 DBDump 解码; 仅 version 为 0 且 channels, groups, group_items, settings, api_keys, llm_infos, relay_logs 和全部六种 stats 数组长度都为 0 时尝试 wrapper. 该条件漏查 channel_keys, 也不检查 exported_at 或 include 标志. wrapper 的 code 和 message 不必提供, 不检查 code 为 200; wrapper 自身解码错误被忽略, 只有成功读到 data 才再解到同一个 dump, 未覆盖的顶层字段可能保留. 非零顶层 version 或非空受检查数组会阻止解包, 只兼容一层 wrapper. 例如 code 为字符串可使 data 被忽略而按空 dump 成功. 裸 {}, null 或 data: null 可进行空导入, 未知字段被忽略. anyOf 仅记录兼容形态, 不是严格的解包判定或互斥校验. version 仅允许 0 或 1, 缺失和 null 进入零值; 其他 version 返回 400. 所有表操作在一个事务内, channels, channel_keys, groups, group_items, api_keys 和启用的 relay_logs 按冲突 DoNothing 插入; llm_infos 按 name UpdateAll; settings 按 key 更新 value 并过滤 two_factor_enabled; stats 按各实体主键 UpdateAll, stats_hourly 仅按 hour 而非 date+hour. 缺失或空数组不删除旧数据, 冲突不重映射 ID 或关联. include_logs 和 include_stats 控制顶层可选表操作, 默认 false. 导入不走常规创建校验或 Setting.Validate, 不先保存运行缓存, 也不重调度任务. 提交后 InitCache 的错误被忽略, 仍可能返回 200, 刷新可覆盖未落库增量. Source: internal/server/handlers/setting.go:105-186; internal/op/backup.go:79-221; internal/op/cache.go:9-29.'
+      description: '不使用 RequireJSON. Content-Type 大小写敏感地包含 multipart/form-data 时读取文件字段 file, 其他 Content-Type 或缺失头均把原始 body 作为 JSON 解码. application/octet-stream 仅代表其他媒体类型的直接 JSON 路径, 不是限定只接受这里列出的媒体类型. 文件后缀和 part MIME 不做业务校验, handler 使用 io.ReadAll 且没有显式大小限制. 先按裸 DBDump 解码; 仅 version 为 0 且 channels, channel_keys, privacy_rules, groups, group_items, settings, api_keys, llm_infos, relay_logs 和全部六种 stats 数组长度都为 0 时尝试 wrapper, 不检查 exported_at 或 include 标志. wrapper 的 code 和 message 不必提供, 不检查 code 为 200; wrapper 自身解码错误被忽略, 只有成功读到 data 才再解码并重新构造整个 dump, 不保留未提供的外层字段. 非零顶层 version 或非空受检查数组会阻止解包, 只兼容一层 wrapper. 例如 code 为字符串可使 data 被忽略而按空 dump 成功. 裸 {}, null 或 data: null 可进行空导入, 未知字段被忽略. anyOf 仅记录兼容形态, 不是严格的解包判定或互斥校验. version 保留 1 并接受旧版本 0/1, 缺失和 null 进入零值; 其他 version 返回 400. 缺失, null 或空 privacy_rules 不删除现有规则; 严格校验规则及正 ID, enabled 缺省 true, false 保留, null 拒绝. 完全相同 source/alias 映射幂等跳过并保留目标 id/enabled; 新映射按备份 id 插入, 主键或任一映射键冲突为 409, 不重映射 ID. 持同一隐私写锁合并规则和设置, 全部保留的 Setting 逐行执行 Validate, 隐私设置必须为严格字符串并与完整候选规则一起编译. 所有业务表在一个静默事务内: channels, channel_keys, groups, group_items, api_keys 和启用的 relay_logs 按冲突 DoNothing 插入; llm_infos 按 name UpdateAll; settings 按 key 更新 value 并过滤 two_factor_enabled; stats 按各实体主键 UpdateAll, stats_hourly 仅按 hour 而非 date+hour. 任一提交前失败回滚全部业务表并保留旧快照. PostgreSQL 新规则的显式 ID 插入后在 Commit 前修正实际自增序列, 不倒退; 序列本身不随事务回滚, 失败可能留空号. SQLite/MySQL 沿用显式主键插入的序列行为. 其他缺失或空数组不删除旧数据, include_logs/include_stats 默认 false 并控制相应顶层表, 不控制规则. 普通实体仍不走创建校验, 不先保存运行缓存或重调度任务. Commit 后一次发布隐私快照并同步隐私设置缓存, 再刷新其他缓存而不二次编译隐私状态; 刷新失败为固定 500 backup import committed but cache refresh failed, 数据已经提交, 不谎称回滚. Source: internal/server/handlers/setting.go; internal/op/backup.go; internal/op/cache.go.'
       parameters: []
       responses:
         '200':
-          description: 逐表受影响行数, 不是稳定的新增行数. 缓存刷新成功不由该响应保证.
+          description: 逐表受影响行数, 不是稳定的新增行数. privacy_rules 总有键, 幂等跳过为 0; 隐私状态已发布且其他缓存刷新成功.
           content:
             application/json:
               schema:
@@ -1569,7 +1781,7 @@ paths:
                 allOf:
                   - $ref: '#/components/schemas/SuccessBase'
         '400':
-          description: "缺少 Authorization, multipart 缺少或无法读取 file, body 读取或 JSON 解码失败, 不支持的 version, 或数据库导入事务失败. 数据库业务错误在此也映射为 400, 不是 500. multipart 缺少文件分支 message 为 missing upload file field 'file'. Source: internal/server/handlers/setting.go:108-145."
+          description: "缺少 Authorization, multipart 缺少或无法读取 file, body 读取或 JSON 解码失败, 不支持的 version, 非法规则或 Setting 校验失败. multipart 缺少文件分支 message 为 missing upload file field 'file'. 隐私规则和设置错误使用固定文本. Source: internal/server/handlers/setting.go."
           content:
             application/json:
               schema:
@@ -1580,8 +1792,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: 隐私规则主键或 source/alias 映射冲突, 固定 message 为 privacy rule conflict, 不返回冲突值.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: 接口内部错误或全局 panic recovery. 错误原因以 message 为准, 当前实现可能将资源不存在等错误映射为 500.
+          description: 固定编译或存储错误, 不返回原数据库错误或映射参数; 也包括 backup import committed but cache refresh failed, 该分支已经提交全部业务表并发布隐私快照, 不是回滚. recovery 仍可能返回 500.
           content:
             application/json:
               schema:
@@ -1654,7 +1872,7 @@ paths:
     post:
       operationId: setSetting
       summary: 更新单个运行期设置
-      description: '认证后要求 Content-Type 包含大小写敏感子串 application/json, 不是严格 MIME 解析或通用 +json 支持. 绑定 Setting 后进行按 key 的校验, 只更新缓存中已存在的 key, 不创建新 key. 未知 key 通常返回 500 setting not found. two_factor_enabled 无论 value 都返回 403, 必须使用 2FA 专用接口. 先写数据库再更新缓存, 相同值不写数据库. 仅 model_info_update_interval 和 sync_llm_interval 调用 task.Update; stats_save_interval 不热更新任务. task.Update 为尽力更新, 不存在的任务不会创建, 非正间隔删除任务, 非阻塞发送也可能跳过, 接口仍可返回 200. 各默认值和校验见 Setting. Source: internal/server/handlers/setting.go:28-30,51-87; internal/op/setting.go:34-50; internal/task/task.go:54-77.'
+      description: '认证后要求 Content-Type 包含大小写敏感子串 application/json, 不是严格 MIME 解析或通用 +json 支持. key 按 SettingKey 解码, value 先保留 RawMessage: 普通 key 可省略或 null 进入字符串零值; 三个隐私 key 必须提供非 null 字符串并严格解码. 按 key 执行 Setting.Validate, 只更新缓存中已存在的 key, 不创建新 key. 普通未知 key 通常返回 500 setting not found. two_factor_enabled 无论 value 都返回 403, 必须使用 2FA 专用接口. 普通设置先写数据库再更新缓存, 隐私设置进入 PrivacySetSetting: 同一隐私写锁内验证完整配置和规则集合, 编译候选, 事务提交后一次发布新请求快照并同步缓存; 失败保留旧版本, 当前请求不切换快照, 相同值不写数据库. 仅 model_info_update_interval 和 sync_llm_interval 调用 task.Update; stats_save_interval 不热更新任务. task.Update 为尽力更新, 不存在的任务不会创建, 非正间隔删除任务, 非阻塞发送也可能跳过, 接口仍可返回 200. 各默认值和校验见 Setting. Source: internal/server/handlers/setting.go; internal/op/setting.go; internal/op/privacy.go; internal/task/task.go:54-77.'
       parameters: []
       responses:
         '200':
@@ -1708,7 +1926,7 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/SettingInput'
-        description: key 和 value 没有 required binding. 遗漏进入零值后再走校验和缓存存在性检查. value 应为字符串形式, 不能提交 JSON 布尔或数值来代替字符串.
+        description: key 没有 required binding. 普通 key 的 value 可省略或 null; 三个隐私 key 要求 value 存在且为非 null 字符串. 布尔和数值设置也必须使用字符串形式, 合法内容见 Setting.
   /api/v1/stats/apikey:
     get:
       operationId: listApiKeyStats
@@ -2434,7 +2652,7 @@ paths:
     post:
       operationId: relayChatCompletions
       summary: 转发 OpenAI Chat Completions 请求
-      description: '入站及客户端响应协议固定为 OpenAI Chat Completions, 与鉴权头无关. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 只检查 Content-Type 包含小写 application/json, 解析后要求非空 model 和非空 messages. 可选择 openai/chat_completions, openai/responses, anthropic/messages, gemini/contents 或 doubao 出站, 普通转换不承诺全部官方或扩展字段无损. stream:true 使用 SSE, 首事件超时只应用于配置了正 first_token_time_out 的 Group, 已写出响应后不重试或追加 JSON 错误. 完整 model 优先精确匹配 Group, Group 存在但无启用候选时返回 503 且不回退. Group 不存在且 model 包含 / 时按第一个 / 解析 channelName/modelName, 严格区分大小写且选路不 trim, 只使用渠道 Model/CustomModel 当前快照. supported_models 非空时禁止实际直连, 正常 Group 白名单按逗号拆分但不 trim, 与 /v1/models 的 trim 行为不同. 直连仅尝试指定渠道一次, 不使用负载均衡, 故障转移, sticky, Group 首事件超时或 Group 请求选项, 仍检查渠道启用, 可用 Key, 有效 BaseURL 和熔断. 分组请求选项先应用, 渠道后覆盖, JSON 顶层 null 删除参数, 自定义 Header 可覆盖或删除认证头. 协议直通另需 passthrough_enabled, 入站与渠道 Type 完全相同, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改写 JSON model, 不等同于指定渠道直连. 非流式直通保留原始成功 body, status 和 Header. 流式直通保留解析后的 data 和 event/id, 由 Octopus 重新编码 SSE 并使用本地响应头与 200 状态, 不保证原始字节或全部上游 Header. endpoint 直接拼 BaseURL, 不做普通版本规范化. 本地错误及分组全部失败返回 ErrorResponse, 分组最终失败为 502. 仅指定渠道直连的可识别上游 HTTP 错误保留状态并转换为 OpenAIProtocolError, 无上游 HTTP 状态的真实尝试失败为 502, 不可用或跳过为 503. 流已提交后的错误及客户端取消不保证另有错误 JSON. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:59, internal/relay/relay.go:42-177,287-603, internal/relay/direct_channel.go:26-117, internal/relay/passthrough.go:37-176.'
+      description: '入站及客户端响应协议固定为 OpenAI Chat Completions, 与鉴权头无关. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 只检查 Content-Type 包含小写 application/json, 解析后要求非空 model 和非空 messages. 可选择 openai/chat_completions, openai/responses, anthropic/messages, gemini/contents 或 doubao 出站, 普通转换不承诺全部官方或扩展字段无损. stream:true 使用 SSE, 首事件超时只应用于配置了正 first_token_time_out 的 Group, 已写出响应后不重试或追加 JSON 错误. 完整 model 优先精确匹配 Group, Group 存在但无启用候选时返回 503 且不回退. Group 不存在且 model 包含 / 时按第一个 / 解析 channelName/modelName, 严格区分大小写且选路不 trim, 只使用渠道 Model/CustomModel 当前快照. supported_models 非空时禁止实际直连, 正常 Group 白名单按逗号拆分但不 trim, 与 /v1/models 的 trim 行为不同. 直连仅尝试指定渠道一次, 不使用负载均衡, 故障转移, sticky, Group 首事件超时或 Group 请求选项, 仍检查渠道启用, 可用 Key, 有效 BaseURL 和熔断. 分组请求选项先应用, 渠道后覆盖, JSON 顶层 null 删除参数, 自定义 Header 可覆盖或删除认证头. 协议直通另需 passthrough_enabled, 入站与渠道 Type 完全相同, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改写 JSON model, 不等同于指定渠道直连. 非流式直通在没有隐私正文变化时保留原始成功 body, status 和 Header; 选定文本仍经过最终写回还原. 流式直通保留解析后的事件形态和 event/id, 选定字段可被还原, 由 Octopus 重新编码 SSE 并使用本地响应头与 200 状态, 不保证原始字节或全部上游 Header. endpoint 直接拼 BaseURL, 不做普通版本规范化. 本地错误及分组全部失败返回 ErrorResponse, 分组最终失败为 502. 仅指定渠道直连的可识别上游 HTTP 错误保留状态并转换为 OpenAIProtocolError, 无上游 HTTP 状态的真实尝试失败为 502, 不可用或跳过为 503. 流已提交后的错误及客户端取消不保证另有错误 JSON. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 隐私配置见 Setting, 默认关闭, 默认仅普通消息, 默认 continue. 入口固定规则/配置快照, 全部尝试共用, 管理更新仅影响新请求; 仅开关 true, 非零范围且至少一条启用规则才处理. 每次应用完请求选项后按实际 outbound APIFormat 一次最左同起点最长非重叠替换为 [[OCTOPUS_PII:ALIAS]], 不修改内部原请求/RawRequest, 重试重新转换. 最终客户端 Body/SSE 选定字段全局反查该快照启用规则的完整标记, 不检查本请求是否产生标记, 未知/非法/残缺标记字面保留, 替换及还原均不递归. 分类按最终 wire 位置, 普通消息含 prompt/system/developer 和回复; 工具定义仅 description/schema 描述, enum/pattern/default 等不扫描; 工具调用和响应处理支持的业务字符串值, 工具调用范围关闭时模型参数标记不还原, 可能被工具写入文件. Chat/Doubao 使用实际 content 路径及 refusal, function.arguments 为内层 JSON 字符串, 已知未支持的选定原生载荷进入失败策略. 不处理推理/thinking/摘要/签名/加密内容, 媒体/文件 URL/二进制, 协议模型/角色/工具名/ID/索引/状态, Header/query/JSON 键/非字符串标量, annotations/citations/偏移/logprobs/usage; 不协调 schema 或换算文件 offset/行列, 长度变化可能使工具约束失败. 协议直通及 raw 回放走相同最终边界, 不重复扫描, 正文变化删除旧 Content-Length. continue 请求放弃整份候选并发送选项应用后的原 Body, 非流式响应放弃整份恢复, 不掩盖认证/转换/网络错误. abort 请求不发上游或换渠道, 非流式未写回时固定 502 privacy processing failed; SSE 已提交后关闭上游/连接, 不改状态/伪造终止或重试. parse/路由/最终错误及直连转换后的上游 error.message 使用同一快照, 普通消息范围控制错误文本, 进入 Handler 前的鉴权拒绝不改. 本地隐私失败不触发 Key 冷却或渠道失败/熔断, 尝试可记 skipped 而最终请求失败; 真实上游错误仍按原归因. 活跃隐私对话每次尝试在出站转换前观测原 Body/Data 的 usage 字段及 presence, 包括实际 HTTP 错误正文提供的 usage, 不缓存原正文或改事件, 累计值最后明确出现值覆盖而非逐事件相加, 缺失与真实 0 区分. Chat/Doubao 读顶层 usage, Responses 完整 JSON 顶层 usage/生命周期 response.usage, Gemini usageMetadata, Anthropic 合并 start 的 input/cache 与 delta 的最终 output, prompt 为 input+cache_read+cache_creation; Gemini prompt 加 toolUsePrompt/output 加 thoughts, 既有价格算法不变. 不另取转换后聚合 usage 重复计费或按还原文本估算, 保留 EnsureUsage 的请求兼容行为, capture 活到 stream.Close 并受 mutex 保护. continue/abort/取消保留已捕获真实用量, 未收到不补造, 实际渠道和 Key 费用每次执行只落一次, 日志渠道优先最后实际执行过的原始观测尝试. privacy_triggered 仅 OR 实际采用出站变化或成功提交写回变化, 不保证完整脱敏; 原请求日志仍是内部请求加参数覆盖, 日志/规则/备份可能含明文, 不自动清理或加密. SSE FIFO/身份/失败回退见流 schema. 来源: internal/server/server.go:59; internal/relay/{relay,direct_channel,passthrough,privacy,privacy_usage,metrics}.go; internal/privacy/{types,json,protocol_chat,stream}.go.'
       parameters: []
       responses:
         '200':
@@ -2531,7 +2749,7 @@ paths:
     post:
       operationId: relayEmbeddings
       summary: 转发 OpenAI Embeddings 请求
-      description: '入站及客户端响应固定为 OpenAI Embeddings, 与鉴权头无关. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 只检查 Content-Type 包含小写 application/json. model 必须非空, input 支持 string, string[], token 整数数组或二维 token 数组, 并执行非空校验. 不提供 stream 或正式 SSE 响应路径, 转换路径不识别 stream 字段. 可选择 openai/chat_completions, openai/responses, openai/embeddings, gemini/contents 或 doubao. OpenAI 类渠道实际走 /embeddings, openai/responses 渠道此时也不是 Responses API. Gemini 走 embedContent 或 batchEmbedContents 且仅转换文本, token 数组失败. Doubao 走 /embeddings/multimodal, 当前入站只提供上述文本或 token 类型, 出站只构造文本项, 不承诺 token 输入或多模态兼容. 完整 model 优先精确命中 Group, 存在但无启用候选时 503 且不回退. 不存在且含 / 时按第一个 / 拆 channelName/modelName, 大小写严格且选路不 trim, 只检查渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单按逗号拆分不 trim, 与 /v1/models 的 trim 不同. 直连一次指定渠道尝试, 不用负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, 仅 JSON 顶层合并参数, null 删除, Header 可覆盖或删除认证. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改 JSON model, 不等同直连. 直通保留原始成功 body, status 和 Header, endpoint 直接拼 BaseURL, 未做普通版本规范化. 即使原始 body 带 stream 扩展, 也不因此形成正式 SSE 支持. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败为 502. 仅直连可识别的上游 HTTP 错误保留状态并转为 OpenAIProtocolError, 无 HTTP 状态的真实尝试失败为 502, 不可用或跳过为 503. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:62, internal/relay/relay.go:42-177, internal/relay/transformers.go:49-60, axonhub pin d061ac7df6ae transformer/openai/embedding_inbound.go, transformer/gemini/embedding.go, transformer/doubao/embedding.go.'
+      description: '入站及客户端响应固定为 OpenAI Embeddings, 与鉴权头无关. 整个 embedding 请求退出隐私处理, 请求/响应/错误均不替换或还原, 不使用隐私原始 usage capture, 保持既有计费路径. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 只检查 Content-Type 包含小写 application/json. model 必须非空, input 支持 string, string[], token 整数数组或二维 token 数组, 并执行非空校验. 不提供 stream 或正式 SSE 响应路径, 转换路径不识别 stream 字段. 可选择 openai/chat_completions, openai/responses, openai/embeddings, gemini/contents 或 doubao. OpenAI 类渠道实际走 /embeddings, openai/responses 渠道此时也不是 Responses API. Gemini 走 embedContent 或 batchEmbedContents 且仅转换文本, token 数组失败. Doubao 走 /embeddings/multimodal, 当前入站只提供上述文本或 token 类型, 出站只构造文本项, 不承诺 token 输入或多模态兼容. 完整 model 优先精确命中 Group, 存在但无启用候选时 503 且不回退. 不存在且含 / 时按第一个 / 拆 channelName/modelName, 大小写严格且选路不 trim, 只检查渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单按逗号拆分不 trim, 与 /v1/models 的 trim 不同. 直连一次指定渠道尝试, 不用负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, 仅 JSON 顶层合并参数, null 删除, Header 可覆盖或删除认证. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改 JSON model, 不等同直连. 直通保留原始成功 body, status 和 Header, endpoint 直接拼 BaseURL, 未做普通版本规范化. 即使原始 body 带 stream 扩展, 也不因此形成正式 SSE 支持. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败为 502. 仅直连可识别的上游 HTTP 错误保留状态并转为 OpenAIProtocolError, 无 HTTP 状态的真实尝试失败为 502, 不可用或跳过为 503. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:62, internal/relay/relay.go:42-177, internal/relay/transformers.go:49-60, axonhub pin d061ac7df6ae transformer/openai/embedding_inbound.go, transformer/gemini/embedding.go, transformer/doubao/embedding.go.'
       parameters: []
       responses:
         '200':
@@ -2609,7 +2827,7 @@ paths:
     post:
       operationId: relayImageEdits
       summary: 转发 multipart 图片编辑请求
-      description: '入站及响应固定为 OpenAI Images 格式. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. 不挂 RequireJSON. 使用带 boundary 的 multipart, 解析器接受 multipart/ 前缀, JSON body 不受支持且通常返回 400, 不是入口 415. 至少提供 image 或 image[] 文件 part, filename 必须非空, prompt trim 后非空. model 先 trim, 缺失或空时默认 dall-e-2. 表单 stream trim 后大小写不敏感等于 true 则 400, 不支持 SSE. 文件 MIME 支持 PNG, JPEG, GIF, WebP, 单文件及普通字段默认 50 MiB, AXONHUB_MAX_IMAGE_FILE_SIZE 可调整. 总 body 固定解析限额 816 MiB, 最多 16 个文件 part, 包括 mask 和未知文件字段. 限额在完整 body 读入后校验, 不是入口读流限额, 超限通常 400 而非 413. 可选择 OpenAI chat/responses/image 类渠道, Gemini 或 Doubao, openai/responses 此时仍用 Images outbound. Gemini 和 Doubao 不完整保留 mask 及其他 OpenAI 参数, 不保证无损. 完整 model 优先精确匹配 Group, 存在但无启用候选时 503 且不回退. 不存在且含 / 时按第一个 / 拆 channelName/modelName, 选路大小写严格, multipart 入站已 trim model, 只匹配渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单按逗号拆分不 trim, 与 /v1/models 的 trim 不同. 直连仅一次指定渠道尝试, 不用负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, 参数覆盖仅作用于最终 JSON body, 不能改写 OpenAI multipart body, Header 可覆盖或删除认证头. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项, endpoint 有效且 multipart 不需要模型改写, 仍先解析和选路, 不等同直连. 直连去前缀或 Group 模型改名通常使 multipart 退回转换. 直通保留成功 body, status 和 Header, endpoint 直接拼 BaseURL 而不做普通版本规范化. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败 502. 仅直连可识别上游 HTTP 错误保留状态并转 OpenAIProtocolError, 无 HTTP 状态的真实尝试失败 502, 不可用或跳过 503. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:64, internal/relay/passthrough.go:37-54, axonhub pin d061ac7df6ae transformer/openai/image_inbound.go:252-321,389-483.'
+      description: '入站及响应固定为 OpenAI Images 格式. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. 不挂 RequireJSON. 整个图片编辑请求退出隐私处理, 包括 multipart 文字/二进制, 转换后的 JSON prompt, 响应和错误, 不使用隐私原始 usage capture, 保持既有计费路径. 使用带 boundary 的 multipart, 解析器接受 multipart/ 前缀, JSON body 不受支持且通常返回 400, 不是入口 415. 至少提供 image 或 image[] 文件 part, filename 必须非空, prompt trim 后非空. model 先 trim, 缺失或空时默认 dall-e-2. 表单 stream trim 后大小写不敏感等于 true 则 400, 不支持 SSE. 文件 MIME 支持 PNG, JPEG, GIF, WebP, 单文件及普通字段默认 50 MiB, AXONHUB_MAX_IMAGE_FILE_SIZE 可调整. 总 body 固定解析限额 816 MiB, 最多 16 个文件 part, 包括 mask 和未知文件字段. 限额在完整 body 读入后校验, 不是入口读流限额, 超限通常 400 而非 413. 可选择 OpenAI chat/responses/image 类渠道, Gemini 或 Doubao, openai/responses 此时仍用 Images outbound. Gemini 和 Doubao 不完整保留 mask 及其他 OpenAI 参数, 不保证无损. 完整 model 优先精确匹配 Group, 存在但无启用候选时 503 且不回退. 不存在且含 / 时按第一个 / 拆 channelName/modelName, 选路大小写严格, multipart 入站已 trim model, 只匹配渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单按逗号拆分不 trim, 与 /v1/models 的 trim 不同. 直连仅一次指定渠道尝试, 不用负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, 参数覆盖仅作用于最终 JSON body, 不能改写 OpenAI multipart body, Header 可覆盖或删除认证头. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项, endpoint 有效且 multipart 不需要模型改写, 仍先解析和选路, 不等同直连. 直连去前缀或 Group 模型改名通常使 multipart 退回转换. 直通保留成功 body, status 和 Header, endpoint 直接拼 BaseURL 而不做普通版本规范化. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败 502. 仅直连可识别上游 HTTP 错误保留状态并转 OpenAIProtocolError, 无 HTTP 状态的真实尝试失败 502, 不可用或跳过 503. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:64, internal/relay/passthrough.go:37-54, axonhub pin d061ac7df6ae transformer/openai/image_inbound.go:252-321,389-483.'
       parameters: []
       responses:
         '200':
@@ -2689,7 +2907,7 @@ paths:
     post:
       operationId: relayImageGenerations
       summary: 转发图片生成请求
-      description: '入站及客户端响应固定为 OpenAI Images 格式, 与鉴权头无关. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 检查 Content-Type 包含小写 application/json. prompt 非空但不 trim, model 缺失, null 或空字符串时默认 dall-e-2, stream:true 在选路前返回 400, 不支持 SSE. 可选择 OpenAI chat/responses/image 类渠道, gemini/contents 或 doubao, Anthropic 和 embedding 类渠道不兼容. openai/responses 渠道在本入口实际使用 OpenAI Images outbound, Gemini 用 generateContent, Doubao 用 images/generations. 参数映射及 response_format 的保留取决于出站和实际模型, 不保证所有字段无损. 完整 model 优先精确匹配 Group, 已存在但无启用候选时 503 且不回退. 不存在且含 / 时按第一个 / 拆 channelName/modelName, 大小写严格且选路不 trim, 仅匹配渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单逗号拆分不 trim, 与 /v1/models 的 trim 不同. 直连仅一次指定渠道尝试, 不使用负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, JSON 顶层 null 删除参数, Header 可覆盖或删除认证头. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改 JSON model, 不等同直连. 直通保留成功 body, status 和 Header, 直接拼 BaseURL 与 endpoint, 不做普通版本规范化. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败为 502. 仅直连可识别上游 HTTP 错误保留状态并转为 OpenAIProtocolError, 无 HTTP 状态的真实尝试失败为 502, 不可用或跳过为 503. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:63, internal/relay/relay.go:42-177, internal/relay/transformers.go:62-76, axonhub pin d061ac7df6ae transformer/openai/image_inbound.go:199-250.'
+      description: '入站及客户端响应固定为 OpenAI Images 格式, 与鉴权头无关. 整个图片生成请求退出隐私处理, 包括 JSON prompt, 响应和错误, 不使用隐私原始 usage capture, 保持既有计费路径. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 检查 Content-Type 包含小写 application/json. prompt 非空但不 trim, model 缺失, null 或空字符串时默认 dall-e-2, stream:true 在选路前返回 400, 不支持 SSE. 可选择 OpenAI chat/responses/image 类渠道, gemini/contents 或 doubao, Anthropic 和 embedding 类渠道不兼容. openai/responses 渠道在本入口实际使用 OpenAI Images outbound, Gemini 用 generateContent, Doubao 用 images/generations. 参数映射及 response_format 的保留取决于出站和实际模型, 不保证所有字段无损. 完整 model 优先精确匹配 Group, 已存在但无启用候选时 503 且不回退. 不存在且含 / 时按第一个 / 拆 channelName/modelName, 大小写严格且选路不 trim, 仅匹配渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单逗号拆分不 trim, 与 /v1/models 的 trim 不同. 直连仅一次指定渠道尝试, 不使用负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, JSON 顶层 null 删除参数, Header 可覆盖或删除认证头. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改 JSON model, 不等同直连. 直通保留成功 body, status 和 Header, 直接拼 BaseURL 与 endpoint, 不做普通版本规范化. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败为 502. 仅直连可识别上游 HTTP 错误保留状态并转为 OpenAIProtocolError, 无 HTTP 状态的真实尝试失败为 502, 不可用或跳过为 503. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:63, internal/relay/relay.go:42-177, internal/relay/transformers.go:62-76, axonhub pin d061ac7df6ae transformer/openai/image_inbound.go:199-250.'
       parameters: []
       responses:
         '200':
@@ -2767,7 +2985,7 @@ paths:
     post:
       operationId: relayImageVariations
       summary: 转发 multipart 图片变体请求
-      description: '入站及响应固定为 OpenAI Images 格式. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. 不挂 RequireJSON. 使用有效 boundary 的 multipart, 解析器接受 multipart/ 前缀. JSON body 不受支持且通常返回 400, 不是入口 415. image 或 image[] 合计必须恰好一个带非空 filename 的图片文件. prompt trim 后非空则 400, mask 即使被解析也不用于变体请求. model 先 trim, 缺失或空默认 dall-e-2. 表单 stream trim 后大小写不敏感等于 true 则 400, 不支持 SSE. 文件 MIME 支持 PNG, JPEG, GIF, WebP. 单文件及普通字段默认 50 MiB, AXONHUB_MAX_IMAGE_FILE_SIZE 可调整, 总 body 固定解析限额 816 MiB, 文件 part 总计最多 16(含 mask 或未知字段), 限额在完整读入后校验, 通常 400 而非 413. OpenAI chat/responses/image 类渠道走 OpenAI variations, openai/responses 此时不是 Responses API. 工厂虽允许 Gemini 和 Doubao, 但两者 image outbound 必须有 prompt, 与此入站禁止 prompt 冲突, 标准转换路径不能完成 variation, 会以真实尝试失败处理. 完整 model 优先精确匹配 Group, 存在但无启用候选时 503 且不回退. 不存在且含 / 时按第一个 / 拆 channelName/modelName, 大小写严格, multipart 入站已 trim model, 只匹配渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单逗号拆分不 trim, 与 /v1/models 的 trim 不同. 直连仅一次指定渠道尝试, 无负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, 参数覆盖只作用于最终 JSON body, 不能改写 OpenAI multipart body, Header 可覆盖或删除认证. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项, endpoint 有效且 multipart 不需要模型改写, 仍先解析和选路, 不等同直连. 直连去前缀或 Group 模型改名通常退回转换. 直通保留成功 body, status 和 Header, 直接拼 BaseURL 与 endpoint, 不做普通版本规范化. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败 502. 仅直连可识别的上游 HTTP 错误保留状态并转 OpenAIProtocolError, 无 HTTP 状态的真实尝试失败 502, 不可用或跳过 503. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:65, axonhub pin d061ac7df6ae transformer/openai/image_inbound.go:323-371, transformer/gemini/image.go:19-29, transformer/doubao/outbound.go:190-198.'
+      description: '入站及响应固定为 OpenAI Images 格式. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. 不挂 RequireJSON. 整个图片变体请求退出隐私处理, 包括 multipart, 转换后的 JSON, 响应和错误, 不使用隐私原始 usage capture, 保持既有计费路径. 使用有效 boundary 的 multipart, 解析器接受 multipart/ 前缀. JSON body 不受支持且通常返回 400, 不是入口 415. image 或 image[] 合计必须恰好一个带非空 filename 的图片文件. prompt trim 后非空则 400, mask 即使被解析也不用于变体请求. model 先 trim, 缺失或空默认 dall-e-2. 表单 stream trim 后大小写不敏感等于 true 则 400, 不支持 SSE. 文件 MIME 支持 PNG, JPEG, GIF, WebP. 单文件及普通字段默认 50 MiB, AXONHUB_MAX_IMAGE_FILE_SIZE 可调整, 总 body 固定解析限额 816 MiB, 文件 part 总计最多 16(含 mask 或未知字段), 限额在完整读入后校验, 通常 400 而非 413. OpenAI chat/responses/image 类渠道走 OpenAI variations, openai/responses 此时不是 Responses API. 工厂虽允许 Gemini 和 Doubao, 但两者 image outbound 必须有 prompt, 与此入站禁止 prompt 冲突, 标准转换路径不能完成 variation, 会以真实尝试失败处理. 完整 model 优先精确匹配 Group, 存在但无启用候选时 503 且不回退. 不存在且含 / 时按第一个 / 拆 channelName/modelName, 大小写严格, multipart 入站已 trim model, 只匹配渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单逗号拆分不 trim, 与 /v1/models 的 trim 不同. 直连仅一次指定渠道尝试, 无负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, 参数覆盖只作用于最终 JSON body, 不能改写 OpenAI multipart body, Header 可覆盖或删除认证. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项, endpoint 有效且 multipart 不需要模型改写, 仍先解析和选路, 不等同直连. 直连去前缀或 Group 模型改名通常退回转换. 直通保留成功 body, status 和 Header, 直接拼 BaseURL 与 endpoint, 不做普通版本规范化. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败 502. 仅直连可识别的上游 HTTP 错误保留状态并转 OpenAIProtocolError, 无 HTTP 状态的真实尝试失败 502, 不可用或跳过 503. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:65, axonhub pin d061ac7df6ae transformer/openai/image_inbound.go:323-371, transformer/gemini/image.go:19-29, transformer/doubao/outbound.go:190-198.'
       parameters: []
       responses:
         '200':
@@ -2845,7 +3063,7 @@ paths:
     post:
       operationId: relayAnthropicMessages
       summary: 转发 Anthropic Messages 请求
-      description: '入站及客户端响应协议固定为 Anthropic Messages, 与鉴权头无关. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 只检查 Content-Type 包含小写 application/json. model, messages 和正 max_tokens 在入站执行校验, thinking, system 及 tool_choice 另有明确规则. 可选择 openai/chat_completions, openai/responses, anthropic/messages, gemini/contents 或 doubao 出站, 不保证跨协议所有多模态和原生工具字段无损. Anthropic-Version 入站未强制必填, Anthropic 出站缺省为 2023-06-01, 可受允许合并的入站 Header 或请求选项影响. stream:true 返回 Messages SSE, Group 正 first_token_time_out 才设置首事件超时, 写出后不重试. 完整 model 优先精确命中 Group, 存在但无启用候选时返回 503 且不回退. Group 不存在且 model 含 / 时按第一个 / 解析 channelName/modelName, 选路大小写严格且不 trim, 模型只取渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单按逗号拆分但不 trim, 不同于 /v1/models 的 trim. 直连只尝试指定渠道一次, 不用负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查渠道启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, JSON 顶层 null 删除参数, Header 可覆盖或删除认证头. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改 JSON model, 不等同指定渠道直连. 非流式直通保留成功 body, status 和 Header. 流式直通保留解析后的 data 和 event/id, 由 Octopus 重新编码 SSE 并使用本地响应头与 200 状态, 不保留原始字节或全部上游 Header. endpoint 直接拼 BaseURL, 不做普通版本规范化. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败为 502. 仅直连可识别上游 HTTP 错误保留状态并转换为 AnthropicProtocolError, 顶层 type 来自统一错误类型而不固定为 error, 不是完整上游错误头或 body 透传. 无 HTTP 状态的真实尝试失败为 502, 不可用或跳过为 503. 流提交后的错误和客户端取消不保证另有 JSON. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:61, internal/relay/relay.go:42-177,287-603, internal/relay/direct_channel.go:90-117, axonhub pin d061ac7df6ae transformer/anthropic/inbound.go.'
+      description: '入站及客户端响应协议固定为 Anthropic Messages, 与鉴权头无关. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 只检查 Content-Type 包含小写 application/json. model, messages 和正 max_tokens 在入站执行校验, thinking, system 及 tool_choice 另有明确规则. 可选择 openai/chat_completions, openai/responses, anthropic/messages, gemini/contents 或 doubao 出站, 不保证跨协议所有多模态和原生工具字段无损. Anthropic-Version 入站未强制必填, Anthropic 出站缺省为 2023-06-01, 可受允许合并的入站 Header 或请求选项影响. stream:true 返回 Messages SSE, Group 正 first_token_time_out 才设置首事件超时, 写出后不重试. 完整 model 优先精确命中 Group, 存在但无启用候选时返回 503 且不回退. Group 不存在且 model 含 / 时按第一个 / 解析 channelName/modelName, 选路大小写严格且不 trim, 模型只取渠道 Model/CustomModel 当前快照. supported_models 非空禁止实际直连, Group 白名单按逗号拆分但不 trim, 不同于 /v1/models 的 trim. 直连只尝试指定渠道一次, 不用负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查渠道启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, JSON 顶层 null 删除参数, Header 可覆盖或删除认证头. 协议直通需开关, 相同入站和渠道 Type, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改 JSON model, 不等同指定渠道直连. 非流式直通在没有隐私正文变化时保留成功 body, status 和 Header; 选定文本仍经过最终写回还原. 流式直通保留解析后的事件形态和 event/id, 选定字段可被还原, 由 Octopus 重新编码 SSE 并使用本地响应头与 200 状态, 不保留原始字节或全部上游 Header. endpoint 直接拼 BaseURL, 不做普通版本规范化. 本地错误及分组最终失败为 ErrorResponse, 分组最终失败为 502. 仅直连可识别上游 HTTP 错误保留状态并转换为 AnthropicProtocolError, 顶层 type 来自统一错误类型而不固定为 error, 不是完整上游错误头或 body 透传. 无 HTTP 状态的真实尝试失败为 502, 不可用或跳过为 503. 流提交后的错误和客户端取消不保证另有 JSON. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 隐私配置和默认值见 Setting. 入口固定规则/配置快照, 全部尝试共用, 更新仅影响新请求, 仅开关 true, 非零范围且至少一条启用规则时处理. 应用选项后按实际出站协议一次最左同起点最长非重叠替换为 [[OCTOPUS_PII:ALIAS]], 不修改内部原请求/RawRequest, 重试重新转换; 最终 Body/SSE 选定文本全局反查该快照启用规则的完整标记, 不要求本请求产生, 未知/非法/残缺标记字面保留, 替换及还原不递归. 分类按最终 wire 位置, 普通消息含 system/message 文本和回复, 工具定义仅 description/schema 描述, 工具调用/响应仅支持的业务字符串值. tool_use 等原生 input 与 SSE partial_json 的内层增量 JSON 分开处理, start 初始内容独立分类; 未支持的选定原生载荷进入失败策略, 不猜测协议 envelope. 工具调用范围关闭时模型参数标记不还原, 可能被工具写入文件. thinking/redacted_thinking/摘要/签名/加密内容, 媒体/文件 URL/二进制, 协议模型/角色/工具名/ID/索引/状态, Header/query/JSON 键/非字符串标量, citations/annotations/偏移/logprobs/usage 不改, enum/pattern/default 等不扫描, 不换算工具长度或文件 offset/行列. 协议直通/raw 回放走相同边界且不重复扫描, 正文变化删除旧 Content-Length. continue 请求放弃整份候选并发出选项应用后的原 Body, 非流式响应放弃整份恢复, SSE 余下永久透过; 不掩盖认证/转换/网络错误. abort 请求不发上游或换渠道, 非流式未写回时固定 502 privacy processing failed, SSE 已提交后关闭上游/连接, 不改状态/伪造终止或重试. parse/路由/最终本地错误及直连上游转换错误使用同一快照恢复选定 message, Handler 前鉴权拒绝不改. 本地隐私失败不触发 Key 冷却或渠道失败/熔断, 尝试可记 skipped 而最终请求失败, 真实上游错误仍按原归因. 活跃隐私对话每次尝试在出站转换前观测原 Body/Data 的 usage 字段及 presence, 包括实际 HTTP 错误正文提供的 usage, 不缓存正文或改事件. Anthropic 合并 message_start.message.usage 的 input/cache 和 message_delta.usage 的最终 output, 累计字段最后明确值覆盖而非相加, prompt 为 input+cache_read+cache_creation. 其他出站按各自原生 usage 标准化, Gemini prompt 加 toolUsePrompt/output 加 thoughts, 价格算法不变. 不把转换后聚合 usage 再计一次或按还原文本估算, 保留 EnsureUsage 的请求兼容行为, capture 活到 stream.Close 且受 mutex 保护. continue/abort/取消保留已捕获真实用量, 缺失不补造, 实际渠道和 Key 费用每次执行只落一次. 日志渠道优先最后实际执行过的原始观测尝试, privacy_triggered 仅 OR 实际采用出站变化或成功提交写回变化, 不代表完整脱敏; 原请求日志不回写脱敏 Body, 日志/规则/备份可能含明文, 不自动清理或加密. SSE FIFO/身份/收尾见流 schema. 来源: internal/server/server.go:61; internal/relay/{relay,direct_channel,passthrough,privacy,privacy_usage,metrics}.go; internal/privacy/{types,protocol_anthropic,stream,stream_protocol}.go.'
       parameters:
         - name: Anthropic-Version
           in: header
@@ -2985,7 +3203,7 @@ paths:
     post:
       operationId: relayResponses
       summary: 转发 OpenAI Responses 请求
-      description: '入站及客户端响应协议固定为 OpenAI Responses, 与鉴权头无关. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 只检查 Content-Type 包含小写 application/json. 解析要求非空 model, input 可省略, 或使用字符串及开放 Item 数组, 不保证最终出站能处理空对话. 可选择 openai/chat_completions, openai/responses, anthropic/messages, gemini/contents 或 doubao 出站. 未知顶层参数在转换路径不保证保留, 部分 Responses 专有 tools, input 和 tool_choice 可经 provider extensions 保留至同协议出站. background 在普通转换路径未映射, previous_response_id 不代表 Octopus 存储会话, 未注册查询, 取消或 compact 路由. stream:true 返回 Responses SSE, Group 正 first_token_time_out 才设置首事件超时, 响应写出后不重试. 完整 model 优先精确匹配 Group, 已存在但无启用候选的 Group 返回 503 且不回退. Group 不存在且 model 含 / 时按第一个 / 拆为 channelName/modelName, 大小写严格且选路不 trim, 只读取渠道当前 Model/CustomModel. supported_models 非空禁止实际直连, Group 白名单按逗号拆分不 trim, 与 /v1/models 的 trim 行为不同. 直连只有一次指定渠道尝试, 无负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, JSON 顶层 null 删除参数, Header 可覆盖或删除认证头. 协议直通需开关, 入站与渠道 Type 相同, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改 JSON model, 不等同直连. 非流式直通保留 body, status 和 Header. 流式直通保留解析后的 data 和 event/id, 由 Octopus 重新编码 SSE 并使用本地响应头与 200 状态, 不保留原始字节或全部上游 Header. endpoint 直接拼接 BaseURL, 不做普通版本规范化. 本地错误及分组最终失败用 ErrorResponse, 分组最终失败为 502. 只有直连可识别的上游 HTTP 错误保留状态并转为 ResponsesProtocolError, 无 HTTP 状态的真实尝试失败为 502, 跳过或不可用为 503. 已提交 SSE 后的错误和客户端取消不保证另有 JSON. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 来源: internal/server/server.go:60, internal/relay/relay.go:42-177,287-603, internal/relay/direct_channel.go:26-117, axonhub pin d061ac7df6ae transformer/openai/responses/inbound.go, request_extensions.go.'
+      description: '入站及客户端响应协议固定为 OpenAI Responses, 与鉴权头无关. 非空 x-api-key 优先于 Authorization, Key 必须属于 Octopus 且启用, 未过期, 累计成本未超过 max_cost. RequireJSON 只检查 Content-Type 包含小写 application/json. 解析要求非空 model, input 可省略, 或使用字符串及开放 Item 数组, 不保证最终出站能处理空对话. 可选择 openai/chat_completions, openai/responses, anthropic/messages, gemini/contents 或 doubao 出站. 未知顶层参数在转换路径不保证保留, 部分 Responses 专有 tools, input 和 tool_choice 可经 provider extensions 保留至同协议出站. background 在普通转换路径未映射, previous_response_id 不代表 Octopus 存储会话, 未注册查询, 取消或 compact 路由. stream:true 返回 Responses SSE, Group 正 first_token_time_out 才设置首事件超时, 响应写出后不重试. 完整 model 优先精确匹配 Group, 已存在但无启用候选的 Group 返回 503 且不回退. Group 不存在且 model 含 / 时按第一个 / 拆为 channelName/modelName, 大小写严格且选路不 trim, 只读取渠道当前 Model/CustomModel. supported_models 非空禁止实际直连, Group 白名单按逗号拆分不 trim, 与 /v1/models 的 trim 行为不同. 直连只有一次指定渠道尝试, 无负载均衡, 故障转移, sticky, Group 超时或 Group 请求选项, 仍检查启用, Key, BaseURL 和熔断. Group 请求选项先应用, 渠道后覆盖, JSON 顶层 null 删除参数, Header 可覆盖或删除认证头. 协议直通需开关, 入站与渠道 Type 相同, 无适用请求选项且 endpoint 有效, 仍先解析和选路, 可改 JSON model, 不等同直连. 非流式直通在没有隐私正文变化时保留 body, status 和 Header; 选定文本仍经过最终写回还原. 流式直通保留解析后的事件形态和 event/id, 选定字段可被还原, 由 Octopus 重新编码 SSE 并使用本地响应头与 200 状态, 不保留原始字节或全部上游 Header. endpoint 直接拼接 BaseURL, 不做普通版本规范化. 本地错误及分组最终失败用 ErrorResponse, 分组最终失败为 502. 只有直连可识别的上游 HTTP 错误保留状态并转为 ResponsesProtocolError, 无 HTTP 状态的真实尝试失败为 502, 跳过或不可用为 503. 已提交 SSE 后的错误和客户端取消不保证另有 JSON. Group 路由按 mode 排序候选并在配置允许时让可用 sticky 渠道优先, 尚未写出响应时可顺次尝试或故障转移. 尝试结果记录于 RelayLog.Attempts 并统计, 日志持久化受设置影响. Authorization 通常使用 Bearer <key>, 实现也接受直接 key, 仅剥离精确的 Bearer 加一个空格, 不额外 trim 或读取 Cookie/query 凭证. 隐私配置和默认值见 Setting. 入口固定规则/配置快照, 全部尝试共用, 仅开关 true, 非零范围且至少一条启用规则时处理. 选项应用后按实际出站协议一次最左同起点最长非重叠替换为 [[OCTOPUS_PII:ALIAS]], 不修改内部原请求/RawRequest, 重试重新转换; 最终 Body/SSE 选定字段按该快照全局反查, 不检查本请求是否产生, 未知/非法/残缺标记字面保留, 替换及还原不递归. 分类按最终 wire 位置, 普通消息含 instructions/input/prompt 变量字符串和回复, 工具定义仅 description/schema 描述, 工具调用/响应仅支持的业务字符串值; 工具调用范围关闭时模型参数标记不还原, 可能被工具写入文件. raw refusal/原生回放在最终正文处理, function_call.arguments 保留内层 JSON 字符串或原生 JSON 形式, custom_tool_call.input 为普通文本; 相关范围开启而原生载荷不受支持时进入失败策略, 不按业务键名猜测. 推理/摘要/compaction/签名/加密内容, 媒体/文件 URL/二进制, 协议模型/角色/工具名/ID/索引/状态, Header/query/JSON 键/非字符串标量, annotations/citations/偏移/logprobs/usage 不改, enum/pattern/default 等不扫描, 不换算工具长度或文件 offset/行列. 协议直通不绕过隐私边界, raw 回放不重复扫描, 正文变化删除旧 Content-Length. continue 请求放弃整份改写并发送选项应用后的原 Body, 非流式响应放弃整份恢复, SSE 永久切换原事件透过; 不掩盖认证/转换/网络错误. abort 请求不发上游或换渠道, 非流式未写回时固定 502 privacy processing failed, SSE 已提交后关闭上游/连接, 不改状态/伪造终止或重试. parse/路由/最终本地错误及直连上游转换错误使用同一快照恢复选定 message, Handler 前鉴权拒绝不改. 本地隐私失败不触发 Key 冷却或渠道失败/熔断, 尝试可记 skipped 而最终请求失败, 真实上游错误仍按原归因. 活跃隐私对话每次尝试在出站转换前观测原 Body/Data 的 usage 字段和 presence, 包括实际 HTTP 错误正文提供的 usage, 不缓存正文或改事件, 累计字段最后明确值覆盖而非相加, 缺失与真实 0 区分. Responses 读完整 JSON 顶层 usage/生命周期 response.usage, 其他出站按各自原生 usage 标准化, Anthropic prompt 含 input+cache_read+cache_creation, Gemini prompt 加 toolUsePrompt/output 加 thoughts, 既有价格算法不变. 不用转换后聚合 usage 再计一次或按还原文本估算, 保留 EnsureUsage 的请求兼容行为, capture 活到 stream.Close 且受 mutex 保护. continue/abort/取消保留已捕获用量, 未收到不补造, 实际渠道和 Key 费用每次执行只落一次. 日志渠道优先最后实际执行过的原始观测尝试, privacy_triggered 只 OR 实际采用出站变化或成功提交写回变化, 不保证完整脱敏; 原请求日志不回写脱敏 Body, 日志/规则/备份可能含明文, 不自动清理或加密. SSE FIFO/身份/收尾见流 schema. 来源: internal/server/server.go:60; internal/relay/{relay,direct_channel,passthrough,privacy,privacy_usage,metrics}.go; internal/privacy/{types,protocol_responses,stream,stream_protocol}.go.'
       parameters: []
       responses:
         '200':
@@ -3913,7 +4131,7 @@ components:
           description: 尝试序号, 可包含跳过项.
         status:
           type: string
-          description: 通常为 success, failed, circuit_break 或 skipped. 导入路径允许其他字符串, 因而响应 schema 不强制 enum.
+          description: 通常为 success, failed, circuit_break 或 skipped. 本地隐私失败或客户端断开可记 skipped 而最终请求失败, 不因此更新 Key 冷却或渠道失败/熔断; skipped 不证明上游未执行, 已捕获真实用量仍归实际渠道和 Key. 真实上游错误保留原归因. 导入路径允许其他字符串, 因而响应 schema 不强制 enum.
         duration:
           type: integer
           description: 该尝试耗时, 毫秒.
@@ -4463,6 +4681,7 @@ components:
         - exported_at
         - include_logs
         - include_stats
+        - privacy_rules
       properties:
         version:
           type: integer
@@ -4505,6 +4724,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Setting'
+        privacy_rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/PrivacyRule'
+          description: 全部隐私规则, 按 id 升序, 含停用项. 不受 include_logs/include_stats 控制, 空集合为 [], 明文 JSON 字符串不是 base64.
         stats_total:
           type: array
           items:
@@ -4533,7 +4757,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/RelayLog'
-      description: '数据库导出主体, 不是完整用户或原子运行态快照. 顶层四项元数据必有, version 当前固定 1. 所有表数组带 omitempty, 空时字段省略而不是固定 [] 或 null. channels 不 Preload keys 或 stats, groups 不 Preload items, 对应关联在单独顶层数组. settings 排除 two_factor_enabled. include_stats 和 include_logs 为 false 时相应顶层表不会导出. Source: internal/model/backup.go:7-28; internal/op/backup.go:16-76.'
+      description: '数据库导出主体, 不是完整用户或原子运行态快照. 顶层四项元数据必有, version 当前固定 1. privacy_rules 始终输出非 null 数组, 空规则为 []; 其他表数组带 omitempty, 空时字段省略而不是固定 [] 或 null. channels 不 Preload keys 或 stats, groups 不 Preload items, 对应关联在单独顶层数组. settings 排除 two_factor_enabled. 导出持同一隐私写锁并使用静默只读事务, 取得规则和三个隐私设置的一致版本; 不先 flush 日志, 统计或 Key 缓存, 不保证全部运行态已落库. source/alias, 日志和密钥可能含明文. include_stats 和 include_logs 为 false 时相应顶层表不会导出. Source: internal/model/backup.go; internal/op/backup.go.'
     DBDumpImportBody:
       anyOf:
         - $ref: '#/components/schemas/DBDumpInput'
@@ -4547,7 +4771,7 @@ components:
               $ref: '#/components/schemas/DBDumpInput'
           required:
             - data
-      description: 导入兼容形态, anyOf 不表示严格或互斥解包规则. 裸 DBDumpInput 已允许未知字段, 因而任意含 data 的对象仍可能按裸对象处理. 仅当外层 version 为 0 且受检查业务数组全空时才尝试一层 wrapper, 条件漏查 channel_keys, 不检查元数据标志; code/message 不必提供或满足成功值, wrapper 解码失败被忽略. 精确规则见 importDatabase. JSON null 由 DBDumpInput 兼容.
+      description: 导入兼容形态, anyOf 不表示严格或互斥解包规则. 裸 DBDumpInput 已允许未知字段, 因而任意含 data 的对象仍可能按裸对象处理. 仅当外层 version 为 0 且全部受检查业务数组全空时才尝试一层 wrapper, 包括 channel_keys 和 privacy_rules, 不检查元数据标志; code/message 不必提供或满足成功值, wrapper 解码失败被忽略. 成功解码 data 时, 自定义 DBDump 解码重新构造整个 dump, 不保留未提供的外层业务字段. 精确规则见 importDatabase. JSON null 由 DBDumpInput 兼容.
     DBDumpInput:
       anyOf:
         - type: object
@@ -4615,6 +4839,13 @@ components:
                   items:
                     $ref: '#/components/schemas/SettingInput'
                 - type: 'null'
+            privacy_rules:
+              anyOf:
+                - type: array
+                  items:
+                    $ref: '#/components/schemas/PrivacyRuleImport'
+                - type: 'null'
+              description: 旧备份可省略, null 或 [] 同样不删除现有规则. 新映射保留备份 ID, 同映射幂等跳过, 冲突整次失败.
             stats_total:
               anyOf:
                 - type: array
@@ -4658,7 +4889,7 @@ components:
                     $ref: '#/components/schemas/RelayLogInput'
                 - type: 'null'
         - type: 'null'
-      description: '宽松增量导入对象. 无 required, 未知字段允许并被 Go JSON 解码忽略, JSON null 或 {} 可走空导入. version 缺失或 null 成为 0, 仅 0 或 1 被业务接受, 其他版本返回 400, 此处以描述记录版本校验而不把导出 const 复用于输入. exported_at 若提供必须能被 Go time.Time 解码, 可遗漏或为 null, 未用于恢复逻辑. 数组遗漏, null 或 [] 都表示无对应行. include 标志缺失或 null 默认为 false, 只有相应标志为 true 才处理顶层日志或统计. 不调用实体创建校验或 Setting.Validate, 不强制枚举, 非负数或日期业务规则. 整数仍必须符合对应 Go 类型解析范围. Source: internal/server/handlers/setting.go:153-186; internal/model/backup.go:7-28; internal/op/backup.go:79-175.'
+      description: '增量导入对象. 顶层无 required, 未知字段允许并被 Go JSON 解码忽略, JSON null 或 {} 可走空导入. version 缺失或 null 成为 0, 仅 0 或 1 被业务接受, 其他版本返回 400, 不把导出 const 复用于输入. exported_at 若提供必须能被 Go time.Time 解码, 可遗漏或为 null, 未用于恢复逻辑. 数组遗漏, null 或 [] 都表示无对应行, 旧版本 0/1 备份没有 privacy_rules 不删除现有规则. include 标志缺失或 null 默认为 false, 只有相应标志为 true 才处理顶层日志或统计; 隐私规则不受它们控制. 普通实体不调用创建校验, 但全部保留的 Setting 逐行执行 Validate, 三个隐私 key 严格要求字符串并与完整候选规则一起编译. privacy_rules 项执行严格规则和正 ID 校验, enabled 缺省 true, 显式 false 保留, null 拒绝. 其他实体仍不强制枚举, 非负数或日期业务规则, 整数必须符合对应 Go 类型解析范围. 事务失败不发布快照或部分导入; 已提交但其他缓存刷新失败为固定 500, 不表示数据库回滚. Source: internal/server/handlers/setting.go; internal/model/backup.go; internal/op/backup.go.'
     DBDumpInputapi_keysItemValue:
       anyOf:
         - $ref: '#/components/schemas/APIKeyInput'
@@ -4685,7 +4916,7 @@ components:
           additionalProperties:
             $ref: '#/components/schemas/DBImportResultrows_affectedAdditionalPropertyValue'
           description: 数据库操作受影响行数映射.
-      description: '逐表 RowsAffected, 依数据库驱动和冲突策略而异, 不是稳定的新增行数. 基础 channels, channel_keys, groups, group_items, llm_infos, api_keys, settings 总有键, 空操作为 0. stats_total, stats_daily, stats_hourly, stats_model, stats_channel, stats_api_key 仅 include_stats=true 时有键. relay_logs 仅 include_logs=true 时有键. Source: internal/model/backup.go:31-33; internal/op/backup.go:89-175.'
+      description: '逐表 RowsAffected, 依数据库驱动和冲突策略而异, 不是稳定的新增行数. 基础 channels, channel_keys, groups, group_items, llm_infos, api_keys, settings 和 privacy_rules 总有键, 空操作为 0; privacy_rules 只累计新插入映射, 同映射幂等跳过不计入. stats_total, stats_daily, stats_hourly, stats_model, stats_channel, stats_api_key 仅 include_stats=true 时有键. relay_logs 仅 include_logs=true 时有键. Source: internal/model/backup.go; internal/op/backup.go.'
     DBImportResultrows_affectedAdditionalPropertyValue:
       type: integer
       format: int64
@@ -6263,6 +6494,122 @@ components:
       description: 仅用于非流式协议直通. 按上游 Content-Type 返回原始成功字节, 不要求 JSON 或特定协议结构. 也可能没有响应 body.
     PassthroughJSON:
       description: 仅用于非流式协议直通. 上游成功 JSON 不做结构校验, 可为任意 JSON 值, 包括 null. 普通转换仍使用对应协议的已知响应 schema.
+    PrivacyRule:
+      type: object
+      required:
+        - source
+        - alias
+        - id
+        - enabled
+      properties:
+        source:
+          type: string
+          minLength: 1
+          description: 原文, 必须是有效 UTF-8, 长度 1-512 bytes, 可包含合法 NUL, 空白及换行. 字节长度不是字符数; 无效 UTF-8 和孤立 surrogate 拒绝.
+          x-utf8-byte-length:
+            min: 1
+            max: 512
+        alias:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Z0-9_]{1,64}$
+          description: 别名, 严格 ASCII [A-Z0-9_]{1,64}, 不自动转大写. 标记格式固定为 [[OCTOPUS_PII:ALIAS]], 不可配置.
+        id:
+          type: integer
+          minimum: 1
+          description: 目标规则自增 ID, 必须能解析为当前架构的 Go int 且大于 0.
+        enabled:
+          type: boolean
+          description: 目标启用状态, 必填, false 显式写入, null 拒绝.
+      description: '管理隐私规则响应. 四个字段始终输出, source/alias 是明文 JSON 字符串, 不是 base64. source 和 alias 分别全表唯一, 停用规则仍占用唯一键. 硬删除释放两个键, 不保留旧反查; 复用/改绑别名可能改变历史标记含义. 管理修改仅影响后续请求, 当前请求保持原快照. Source: internal/model/privacy.go; internal/op/privacy.go.'
+    PrivacyRuleCreate:
+      type: object
+      required:
+        - source
+        - alias
+      properties:
+        source:
+          type: string
+          minLength: 1
+          description: 原文, 必须是有效 UTF-8, 长度 1-512 bytes, 可包含合法 NUL, 空白及换行. 字节长度不是字符数; 无效 UTF-8 和孤立 surrogate 拒绝.
+          x-utf8-byte-length:
+            min: 1
+            max: 512
+        alias:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Z0-9_]{1,64}$
+          description: 别名, 严格 ASCII [A-Z0-9_]{1,64}, 不自动转大写. 标记格式固定为 [[OCTOPUS_PII:ALIAS]], 不可配置.
+        id:
+          anyOf:
+            - type: integer
+            - type: 'null'
+          description: 兼容解码字段, 可省略或为 null. 非 null 值必须能被当前架构的 Go int JSON 解码, 不接受字符串、小数或指数表示, 不检查正数. 创建始终使用数据库生成的 ID, 不采用这个输入值, 也不以其值检查主键冲突.
+        enabled:
+          type: boolean
+          description: 新规则默认启用, 显式 false 保留, null 拒绝.
+          default: true
+      description: '隐私规则创建输入. source/alias 必填且非 null, 不 trim, 不转大小写或归一化. 其他未知属性忽略; id 为兼容解码字段, 提供时须能被 Go int JSON 解码或为 null, 但创建不会采用其值. enabled 缺省为 true, 显式 false 保留, 显式 null 或其他类型拒绝. 停用规则仍占用两个独立唯一键. Source: internal/model/privacy.go; internal/op/privacy.go.'
+    PrivacyRuleImport:
+      type: object
+      required:
+        - source
+        - alias
+        - id
+      properties:
+        source:
+          type: string
+          minLength: 1
+          description: 原文, 必须是有效 UTF-8, 长度 1-512 bytes, 可包含合法 NUL, 空白及换行. 字节长度不是字符数; 无效 UTF-8 和孤立 surrogate 拒绝.
+          x-utf8-byte-length:
+            min: 1
+            max: 512
+        alias:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Z0-9_]{1,64}$
+          description: 别名, 严格 ASCII [A-Z0-9_]{1,64}, 不自动转大写. 标记格式固定为 [[OCTOPUS_PII:ALIAS]], 不可配置.
+        enabled:
+          type: boolean
+          description: 新规则默认启用, 显式 false 保留, null 拒绝.
+          default: true
+        id:
+          type: integer
+          minimum: 1
+          description: 备份中的自增主键, 必须能解析为当前架构的 Go int 且大于 0. 新映射使用该值插入.
+      description: '隐私规则备份导入项, 不复用完整更新的 enabled 必填要求. id 必须是正 Go int, source/alias 与创建使用同一严格校验, 顶层项不能为 null. enabled 省略默认 true, 显式 false 保留, null 拒绝. 完全相同 source/alias 映射幂等跳过并保留目标 id/enabled; 新映射保留备份 id, 主键或任一映射键冲突整次失败, 不重映射 ID. Source: internal/model/privacy.go; internal/op/backup.go.'
+    PrivacyRuleUpdate:
+      type: object
+      required:
+        - source
+        - alias
+        - id
+        - enabled
+      properties:
+        source:
+          type: string
+          minLength: 1
+          description: 原文, 必须是有效 UTF-8, 长度 1-512 bytes, 可包含合法 NUL, 空白及换行. 字节长度不是字符数; 无效 UTF-8 和孤立 surrogate 拒绝.
+          x-utf8-byte-length:
+            min: 1
+            max: 512
+        alias:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: ^[A-Z0-9_]{1,64}$
+          description: 别名, 严格 ASCII [A-Z0-9_]{1,64}, 不自动转大写. 标记格式固定为 [[OCTOPUS_PII:ALIAS]], 不可配置.
+        id:
+          type: integer
+          minimum: 1
+          description: 目标规则自增 ID, 必须能解析为当前架构的 Go int 且大于 0.
+        enabled:
+          type: boolean
+          description: 目标启用状态, 必填, false 显式写入, null 拒绝.
+      description: '隐私规则完整更新输入, 不是 patch. 必须提供有效正 ID 及完整 source/alias/enabled; 任何字段缺失或 null 均拒绝. 启停同样提交完整规则. Source: internal/model/privacy.go; internal/op/privacy.go.'
     RelayAnnotation:
       anyOf:
         - type: object
@@ -6310,7 +6657,7 @@ components:
         - $ref: '#/components/schemas/PassthroughJSON'
     RelayAnthropicMessagesStatus200text_event_streamValue:
       type: string
-      description: SSE 文本. 包含 message_start, content_block_start, content_block_delta, content_block_stop, message_delta 和 message_stop 等类型事件.
+      description: 'SSE 文本, 包含 message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop 等事件. 隐私恢复按 message.id/block.index 维持逻辑身份, start 初始 text/input/原生结果独立分类, 空初始 input 不拼入 partial_json; text_delta.text 为普通文本, input_json_delta.partial_json 只恢复内层 JSON 字符串值, thinking/signature/citations delta 和 message_delta usage/stop 不改. block_stop/message_stop 收尾, 不新增 text/input done 快照. 原事件与 ping 共用 FIFO, 跨片 marker/JSON escape 可阻塞其他流/心跳, 替换归起点字段, 后续消费字段可为空, 不删空 delta/改 event/id/sequence_number 或补事件. continue 放弃全部未提交候选并按原 Data FIFO 释放, 余下永久透过, 已写内容不回滚, 非法外层 JSON 仍终止. abort 已提交后关闭上游/连接并记失败, 不改状态/伪造 message_stop 或重试. 正常 EOF/错误释放可保留的字面尾部, 取消清队列不补发, 不合成完成. 上限为 1024 待定事件, 8 MiB 待定字节, 1024 活跃逻辑流和 128 JSON 深度, 等于允许, 超出进入失败策略; 不保证原有日志全流缓存有界. 日志只聚合成功写回且 Flush 的事件, 计费在出站转换前合并原 start 的 input/cache 与 delta 的最终 output, 不相加或按还原文本估算, continue/abort/取消保留已捕获值. Source: internal/privacy/{stream,stream_protocol,json_stream}.go; internal/relay/{relay,privacy_usage}.go.'
     RelayAnthropicMessagesStatus400application_jsonValue:
       anyOf:
         - $ref: '#/components/schemas/ErrorResponse'
@@ -6327,7 +6674,7 @@ components:
         - $ref: '#/components/schemas/PassthroughJSON'
     RelayChatCompletionsStatus200text_event_streamValue:
       type: string
-      description: SSE 文本. data 通常是 Chat Completions chunk JSON, 可含 [DONE]. 不把整段流声明为 JSON 数组.
+      description: 'SSE 文本, data 通常为 Chat chunk JSON, 可含原样 [DONE], 不声明为 JSON 数组. 隐私恢复按 choice.index/tool.index 保持逻辑身份, 0 与缺失区分, 后到 tool.id 仅补别名. content/refusal 为普通文本, function.arguments 仅恢复内层 JSON 字符串值; 同 chunk 最后 delta 先于 finish_reason 收尾, 完整 message 独立恢复, usage-only 不结束文本, reasoning 不扫描. 原事件全局 FIFO, 跨片 marker/JSON escape 可阻塞其他流/心跳, 替换归起点字段, 后续消费字段可为空; 原事件只发一次, 不删空 delta/改 event/id/sequence_number 或补事件. continue 放弃全部未提交候选并按原 Data FIFO 释放, 余下永久透过, 已写内容不回滚, 非法外层 JSON 仍终止. abort 已提交后关闭上游/连接并记失败, 不改状态/伪造 DONE 或重试. 正常 EOF/错误释放可保留的字面尾部, 取消清队列不补发, 不合成完成. 上限为 1024 待定事件, 8 MiB 待定字节, 1024 活跃逻辑流和 128 JSON 深度, 等于允许, 超出进入失败策略; 不保证原有日志全流缓存有界. 仅成功写回且 Flush 的事件参与日志聚合, 计费另取出站转换前的原上游 usage, 缺失不估算, continue/abort/取消保留已捕获值. Source: internal/privacy/{stream,stream_protocol,json_stream}.go; internal/relay/{relay,privacy_usage}.go.'
     RelayChatCompletionsStatus400application_jsonValue:
       anyOf:
         - $ref: '#/components/schemas/ErrorResponse'
@@ -6381,6 +6728,7 @@ components:
         - response_content
         - error
         - attempts
+        - privacy_triggered
         - total_attempts
       properties:
         id:
@@ -6397,7 +6745,7 @@ components:
           type: string
         channel:
           type: integer
-          description: 实际渠道 ID, 优先成功尝试, 否则最后失败尝试, 无此类尝试时可为 0.
+          description: 实际执行过原始 usage 观测的最后渠道优先, 包括本地隐私失败或取消; 否则优先成功尝试, 再取最后失败尝试, 无此类尝试时可为 0. 本地隐私失败的 skipped 项不等于上游未执行.
         channel_name:
           type: string
         actual_model_name:
@@ -6432,6 +6780,9 @@ components:
                 $ref: '#/components/schemas/ChannelAttempt'
             - type: 'null'
           description: 所有记录的尝试, nil 时为 null, 不是省略字段.
+        privacy_triggered:
+          type: boolean
+          description: '请求级触发布尔, 始终输出. 仅实际出站采用了变化的正文或实际写回成功提交了变化的内容至少一次才为 true, 多次尝试逻辑 OR. 功能开启, 扫描无变化, 编译候选和放弃未提交改写不置 true. continue 可能在部分改写后失败, 因此 true 不保证全部内容成功脱敏. 旧日志或备份缺失字段视为 false. 请求日志仍基于内部请求和参数覆盖, 不回写脱敏后的出站 Body, 日志和备份仍可能保存原文. Source: internal/model/log.go; internal/relay/relay.go; internal/relay/metrics.go.'
         total_attempts:
           type: integer
           description: attempts 长度, 包括跳过或熔断项, 不仅是实际上游调用次数.
@@ -6509,6 +6860,11 @@ components:
                   items:
                     $ref: '#/components/schemas/ChannelAttemptInput'
                 - type: 'null'
+            privacy_triggered:
+              anyOf:
+                - type: boolean
+                - type: 'null'
+              description: 旧日志备份缺失或 null 时为 false, 显式布尔值保存. 不根据开关, 正文或规则重新计算触发状态.
             total_attempts:
               anyOf:
                 - type: integer
@@ -6521,7 +6877,7 @@ components:
         - $ref: '#/components/schemas/PassthroughJSON'
     RelayResponsesStatus200text_event_streamValue:
       type: string
-      description: SSE 文本. 包含 response.created, response.output_text.delta, response.completed 等类型事件, 具体事件取决于转换和上游能力.
+      description: 'SSE 文本, 原有 created/output_text.delta/completed 等事件取决于上游和转换能力. 隐私恢复关联 output_index, item.id/item_id 和 call_id, call_id 不当作 item_id, 0 与缺失区分, 后到 ID 仅补别名, 矛盾进入失败策略. output_text/refusal delta 为普通文本, function_call_arguments 为内层 JSON 字符串值增量, custom_tool_call_input 为普通文本. done/content_part.done/output_item.done/terminal.response 完整快照独立恢复, 不追加到 delta; error 仅恢复选定 message 并保留实际事件/status 组合, reasoning/image_generation 载荷不扫描. 原事件全局 FIFO, 跨片 marker/JSON escape 可阻塞其他流/心跳, 替换归起点字段, 后续消费字段可为空, 不删空 delta/改 event/id/sequence_number 或补事件. continue 放弃全部未提交候选并按原 Data FIFO 释放, 余下永久透过, 已写内容不回滚, 非法外层 JSON 仍终止. abort 已提交后关闭上游/连接并记失败, 不改状态/伪造 completed 或重试. 正常 EOF/错误释放可保留的字面尾部, 取消清队列不补发, 不合成终止. 上限为 1024 待定事件, 8 MiB 待定字节, 1024 活跃逻辑流和 128 JSON 深度, 等于允许, 超出进入失败策略; 不保证原有日志全流缓存有界. 仅成功写回且 Flush 的事件参与日志聚合, 计费另在出站转换前读取原生 response.usage, 累计字段最后明确值覆盖, 缺失不估算, continue/abort/取消保留已捕获值. Source: internal/privacy/{stream,stream_protocol,json_stream}.go; internal/relay/{relay,privacy_usage}.go.'
     RelayResponsesStatus400application_jsonValue:
       anyOf:
         - $ref: '#/components/schemas/ErrorResponse'
@@ -7340,7 +7696,7 @@ components:
         value:
           type: string
           description: 字符串形式的值, 包括布尔和数值设置.
-      description: "运行期 KV 设置, key 和 value 均以字符串输出, 不强制 key enum, 缓存可含已加载的自定义 key. 当前默认值: proxy_url='', stats_save_interval='10', cors_allow_origins='*', model_info_update_interval='24', sync_llm_interval='24', relay_log_keep_period='7', relay_log_keep_enabled='true', relay_log_flush_size='50', relay_log_memory_cache_size='100', relay_log_max_content_size_mb='2', relay_log_memory_log_max_dimidiate_times='15', circuit_breaker_threshold='5', circuit_breaker_cooldown='60', circuit_breaker_max_cooldown='600', circuit_breaker_enabled='true', key_circuit_breaker_enabled='true', passthrough_enabled='false', two_factor_enabled='false'. /setting/set 校验: proxy_url 允许空字符串, 非空仅 http/https/socks5 且 host 非空; model_info_update_interval, sync_llm_interval, relay_log_keep_period, relay_log_flush_size, relay_log_memory_cache_size 和三个熔断数值只校验可解析为 Go int, 不要求正数; relay_log_max_content_size_mb 要求整数 >= -1, -1 不限正文, 0 仅允许零正文大小; relay_log_memory_log_max_dimidiate_times 要求 -1 或正整数; relay_log_keep_enabled, circuit_breaker_enabled, key_circuit_breaker_enabled, passthrough_enabled 仅接受字符串 true/false; two_factor_enabled 在 handler 直接 403; stats_save_interval 和 cors_allow_origins 没有内容校验. 运行时日志刷写或内存上限负值回退默认, flush 0 实时写数据库, memory 0 不记日志, 内存 dimidiate=-1 同时绕过折半清理而不保证硬缓存上限. keep_period<=0 不清理历史, 熔断数值<=0 回退 5/60/600. stats_save_interval 修改不热更新任务. 导入不执行这些 /set 校验, 导入和导出都过滤 two_factor_enabled. Source: internal/model/setting.go:11-138; internal/server/handlers/setting.go:51-87; internal/op/log.go:145-268; internal/relay/balancer/circuit.go:74-106."
+      description: "运行期 KV 设置. 隐私配置复用此接口: privacy_enabled 默认字符串 false, 仅接受 true/false; privacy_scopes 默认字符串 1, 仅接受十进制数字组成的 Go int 值 0-15, Messages=1, ToolDefinitions=2, ToolCalls=4, ToolResponses=8, 0 关闭全部范围; privacy_failure_policy 默认字符串 continue, 仅接受 continue/abort. 隐私 value 必须是字符串, null 或其他类型拒绝. 三个隐私 key 通过 PrivacySetSetting 与完整规则集合校验, 提交后一起发布请求快照, 不独立更新开关缓存. Source: internal/model/setting.go; internal/op/privacy.go. key 和 value 均以字符串输出, 不强制 key enum, 缓存可含已加载的自定义 key. 当前默认值: proxy_url='', stats_save_interval='10', cors_allow_origins='*', model_info_update_interval='24', sync_llm_interval='24', relay_log_keep_period='7', relay_log_keep_enabled='true', relay_log_flush_size='50', relay_log_memory_cache_size='100', relay_log_max_content_size_mb='2', relay_log_memory_log_max_dimidiate_times='15', circuit_breaker_threshold='5', circuit_breaker_cooldown='60', circuit_breaker_max_cooldown='600', circuit_breaker_enabled='true', key_circuit_breaker_enabled='true', passthrough_enabled='false', two_factor_enabled='false', privacy_enabled='false', privacy_scopes='1', privacy_failure_policy='continue'. /setting/set 校验: proxy_url 允许空字符串, 非空仅 http/https/socks5 且 host 非空; model_info_update_interval, sync_llm_interval, relay_log_keep_period, relay_log_flush_size, relay_log_memory_cache_size 和三个熔断数值只校验可解析为 Go int, 不要求正数; relay_log_max_content_size_mb 要求整数 >= -1, -1 不限正文, 0 仅允许零正文大小; relay_log_memory_log_max_dimidiate_times 要求 -1 或正整数; relay_log_keep_enabled, circuit_breaker_enabled, key_circuit_breaker_enabled, passthrough_enabled 仅接受字符串 true/false; two_factor_enabled 在 handler 直接 403; stats_save_interval 和 cors_allow_origins 没有内容校验. 运行时日志刷写或内存上限负值回退默认, flush 0 实时写数据库, memory 0 不记日志, 内存 dimidiate=-1 同时绕过折半清理而不保证硬缓存上限. keep_period<=0 不清理历史, 熔断数值<=0 回退 5/60/600. stats_save_interval 修改不热更新任务. 导入逐行执行 Setting.Validate, 隐私配置另与完整候选规则集合校验及编译, 同一事务提交后发布; 导入和导出都过滤 two_factor_enabled. Source: internal/model/setting.go; internal/server/handlers/setting.go; internal/op/backup.go; internal/op/privacy.go; internal/op/log.go:145-268; internal/relay/balancer/circuit.go:74-106."
     SettingInput:
       anyOf:
         - type: object
@@ -7354,7 +7710,24 @@ components:
                 - type: string
                 - type: 'null'
         - type: 'null'
-      description: 宽松 Setting 输入, key 和 value 没有 required binding, 遗漏或 null 进入 Go 字符串零值. /set 再执行按 key 校验和缓存存在性检查, 导入则不调用 Validate. 预定义键, 默认和校验见 Setting, 此 schema 不把它们作为导入约束.
+      description: 'Setting 输入的普通 key/value 没有 required binding, 遗漏或 null 进入 Go 字符串零值. 例外: 三个隐私 key 的 value 必须提供非 null 字符串, 严格解码拒绝无效 UTF-8, 孤立 surrogate 和其他 JSON 类型. /set 只更新缓存中已有 key, 导入可 upsert key; 两者均执行 Setting.Validate, 隐私设置另通过完整配置和规则候选校验及编译. 预定义键, 默认和校验见 Setting, 不把所有 key 强制为 enum. Source: internal/server/handlers/setting.go; internal/model/backup.go; internal/op/backup.go.'
+      allOf:
+        - if:
+            type: object
+            required:
+              - key
+            properties:
+              key:
+                enum:
+                  - privacy_enabled
+                  - privacy_scopes
+                  - privacy_failure_policy
+          then:
+            required:
+              - value
+            properties:
+              value:
+                type: string
     StatsAPIKey:
       type: object
       required:
@@ -7996,7 +8369,7 @@ components:
       description: 宽松全局统计输入, 规范字段为大写 ID, Go JSON 解码也可能按大小写不敏感匹配输入名. 按数据库 id upsert.
     StreamRelayLogsStatus200text_event_streamValue:
       type: string
-      description: '重复的 data: <RelayLog JSON>\n\n 文本帧.'
+      description: '重复的 data: <RelayLog JSON>\n\n 文本帧, RelayLog.privacy_triggered 始终输出布尔, 无管理包装. 字段含义与分页日志和 DBDump 共用实体定义, 不把触发状态当作完整脱敏证明.'
     SuccessBase:
       type: object
       required:

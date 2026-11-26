@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+    "errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
+    "github.com/bestruirui/octopus/internal/privacy"
 	"github.com/bestruirui/octopus/internal/server/middleware"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/server/router"
@@ -49,10 +51,28 @@ func getSettingList(c *gin.Context) {
 }
 
 func setSetting(c *gin.Context) {
-	var setting model.Setting
-	if err := c.ShouldBindJSON(&setting); err != nil {
+    var input struct {
+        Key   model.SettingKey `json:"key"`
+        Value json.RawMessage  `json:"value"`
+    }
+    if err := c.ShouldBindJSON(&input); err != nil {
+        // 解析错误不得回显无效隐私值或其类型.
+        resp.Error(c, http.StatusBadRequest, "invalid setting input")
+        return
+    }
+    setting := model.Setting{Key: input.Key}
+    if model.IsPrivacySettingKey(setting.Key) {
+        value, err := privacy.DecodeJSONString(input.Value)
+        if err != nil {
+            resp.Error(c, http.StatusBadRequest, privacy.ErrInvalidConfig.Error())
+            return
+        }
+        setting.Value = value
+    } else if len(input.Value) != 0 {
+        if err := json.Unmarshal(input.Value, &setting.Value); err != nil {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
+        }
 	}
 	// 两步验证开关必须走 /user/2fa/enable|disable，校验 TOTP 验证码。
 
@@ -64,8 +84,18 @@ func setSetting(c *gin.Context) {
 		resp.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := op.SettingSetString(setting.Key, setting.Value); err != nil {
-		resp.Error(c, http.StatusInternalServerError, err.Error())
+    var err error
+    if model.IsPrivacySettingKey(setting.Key) {
+        err = op.PrivacySetSetting(c.Request.Context(), setting.Key, setting.Value)
+    } else {
+        err = op.SettingSetString(setting.Key, setting.Value)
+    }
+    if err != nil {
+        status := http.StatusInternalServerError
+        if errors.Is(err, privacy.ErrInvalidConfig) {
+            status = http.StatusBadRequest
+        }
+        resp.Error(c, status, err.Error())
 		return
 	}
 	switch setting.Key {
@@ -141,11 +171,17 @@ func importDB(c *gin.Context) {
 
 	result, err := op.DBImportIncremental(c.Request.Context(), &dump)
 	if err != nil {
-		resp.Error(c, http.StatusBadRequest, err.Error())
+        status := http.StatusBadRequest
+        switch {
+        case errors.Is(err, privacy.ErrRuleConflict):
+            status = http.StatusConflict
+        case errors.Is(err, op.ErrImportCommittedCacheRefresh), errors.Is(err, op.ErrBackupStorage),
+            errors.Is(err, op.ErrPrivacyStorage), errors.Is(err, privacy.ErrCompile):
+            status = http.StatusInternalServerError
+        }
+        resp.Error(c, status, err.Error())
 		return
 	}
-
-	_ = op.InitCache()
 
 	resp.Success(c, result)
 }
@@ -161,6 +197,8 @@ func decodeDBDump(body []byte, dump *model.DBDump) error {
 
 	if dump.Version == 0 &&
 		len(dump.Channels) == 0 &&
+        len(dump.ChannelKeys) == 0 &&
+        len(dump.PrivacyRules) == 0 &&
 		len(dump.Groups) == 0 &&
 		len(dump.GroupItems) == 0 &&
 		len(dump.Settings) == 0 &&

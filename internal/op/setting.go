@@ -32,6 +32,9 @@ func SettingGetString(key model.SettingKey) (string, error) {
 }
 
 func SettingSetString(key model.SettingKey, value string) error {
+    if model.IsPrivacySettingKey(key) {
+        return PrivacySetSetting(context.Background(), key, value)
+    }
 	valueCache, ok := settingCache.Get(key)
 	if !ok {
 		return fmt.Errorf("setting not found")
@@ -67,6 +70,9 @@ func SettingGetBool(key model.SettingKey) (bool, error) {
 }
 
 func SettingSetInt(key model.SettingKey, value int) error {
+    if model.IsPrivacySettingKey(key) {
+        return PrivacySetSetting(context.Background(), key, strconv.Itoa(value))
+    }
 	valueCache, ok := settingCache.Get(key)
 	if !ok {
 		return fmt.Errorf("setting not found")
@@ -99,6 +105,11 @@ func settingRefreshCache(ctx context.Context) error {
 
 	existingKeys := make(map[model.SettingKey]bool)
 	for _, setting := range settings {
+        if model.IsPrivacySettingKey(setting.Key) {
+            if err := setting.Validate(); err != nil {
+                return err
+            }
+        }
 		existingKeys[setting.Key] = true
 	}
 

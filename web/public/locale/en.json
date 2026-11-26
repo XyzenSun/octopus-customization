@@ -230,6 +230,88 @@
                 "model": "Model"
             }
         },
+        "privacy": {
+            "title": "Data Masking",
+            "description": "Off by default; at least one enabled rule is required. Changes affect new requests only; requests in progress keep their snapshot. Same-protocol passthrough does not bypass masking.",
+            "enabled": "Enable data masking",
+            "loading": "Loading...",
+            "pending": "Operation in progress",
+            "retry": "Retry",
+            "saved": "Masking settings saved",
+            "saveFailed": "Failed to save masking settings",
+            "settingsLoadFailed": "Failed to load valid masking settings. Check that the backend supports this feature.",
+            "refreshFailed": "The change was saved, but refreshing failed. Retry loading before making further changes.",
+            "scopes": {
+                "title": "Processing scopes",
+                "hint": "The same scopes apply to requests and responses, including both historical and new content. Only regular messages are selected by default.",
+                "messages": {
+                    "label": "Regular messages",
+                    "hint": "Includes prompts, system prompts and model replies. Reasoning and media are not processed."
+                },
+                "toolDefinitions": {
+                    "label": "Tool definitions",
+                    "hint": "Only description text is processed, including schema descriptions. Constraints such as enum/pattern remain unchanged; sensitive values there may still reach the upstream. Changed descriptions can affect model understanding."
+                },
+                "toolCalls": {
+                    "label": "Tool calls",
+                    "hint": "Changing argument strings may affect schema and length/position constraints. When disabled, model-generated placeholders are not restored in tool arguments and may be written to files by tools."
+                },
+                "toolResponses": {
+                    "label": "Tool responses",
+                    "hint": "After file text is replaced, the bytes, characters and line/column positions seen by the model may differ from the actual file. Subsequent offset/edit tools may fail; the system does not translate positions."
+                },
+                "none": "All scopes are off: no content is rewritten and masking is not marked as triggered.",
+                "defaultWarning": "Important: the default selects regular messages only. Tool-call arguments are not restored by default; placeholders generated from regular messages may be written directly to files by client tools."
+            },
+            "failurePolicy": {
+                "label": "On masking failure",
+                "continue": "continue — Continue (default)",
+                "abort": "abort — Stop the request",
+                "continueHint": "continue may abandon masking: a request failure sends the original body; a response failure may leave placeholders unrestored. After a streaming failure, pending edits are discarded and the remaining response passes through without restoration. Already sent content cannot be rolled back.",
+                "abortHint": "abort stops processing. Request-side failure does not contact the upstream; an unwritten non-streaming response returns 502. An already-started stream is disconnected without a fabricated completion event."
+            },
+            "risks": {
+                "title": "Limits and risks",
+                "exclusions": "Embedding and image generation/edit/variation requests, responses and errors are excluded. Conversation media, file URLs and binary data are not scanned. Reasoning/thinking/summaries, protocol signatures and encrypted content are never processed.",
+                "metadata": "Protocol model/role/tool names, IDs, JSON keys, headers, query parameters and non-string scalars stay unchanged, as do annotations/citations, reference offsets, logprobs and usage. The system does not reconcile tool schemas or file offset/range/line/column metadata, wrap client tool execution, or guarantee correct positions after text length changes.",
+                "plaintext": "Original text may remain in request logs, the rule table and backups. Existing response logging is preserved. No automatic cleanup or encryption is performed; manage access and retention yourself.",
+                "history": "Hard deletion or rebinding can change the meaning of historical placeholders. Deleted mappings have no retained reverse lookup; aliases can be reused, causing old placeholders to restore to a newly bound source. Disabled rules also stop replacement and restoration.",
+                "continue": "The default continue policy may give up masking and expose original content. A ‘Data masking triggered’ log badge means only that some changed content was actually sent, not that all content was successfully masked."
+            },
+            "rules": {
+                "title": "Replacement rules",
+                "hint": "Exact, case-sensitive matching; no trimming or normalization. Source and alias must each be unique across all rules; disabled rules still reserve both values and stop both replacement and restoration.",
+                "add": "Add rule",
+                "empty": "No rules yet",
+                "loadFailed": "Failed to load masking rules",
+                "source": "Original text",
+                "alias": "Alias",
+                "sourceHint": "{bytes} / 512 UTF-8 bytes. Valid UTF-8 of 1–512 bytes is required; line breaks and leading/trailing whitespace are preserved.",
+                "sourceInvalid": "Original text must be valid UTF-8 of 1–512 bytes.",
+                "aliasHint": "Strictly 1–64 ASCII characters: A–Z, 0–9 or _. No trimming or automatic uppercase conversion.",
+                "aliasInvalid": "Alias must contain only 1–64 characters from A–Z, 0–9 and _.",
+                "enabled": "Enabled",
+                "disabled": "Disabled",
+                "toggle": "Enable or disable rule #{id}",
+                "edit": "Edit",
+                "delete": "Hard delete",
+                "createTitle": "Create masking rule",
+                "editTitle": "Edit masking rule",
+                "formHint": "New rules are enabled by default. The backend performs final validation. A rule's enabled state controls replacement and restoration together.",
+                "create": "Create",
+                "save": "Save",
+                "cancel": "Cancel",
+                "created": "Masking rule created",
+                "updated": "Masking rule updated",
+                "deleted": "Masking rule permanently deleted",
+                "createFailed": "Failed to create masking rule",
+                "updateFailed": "Failed to update masking rule",
+                "deleteFailed": "Failed to delete masking rule",
+                "deleteTitle": "Permanently delete this rule?",
+                "deleteWarning": "Danger: this is irreversible hard deletion, not disabling. New requests will no longer replace or restore this mapping; old reverse lookups are not retained. Source and alias become reusable, so historical placeholders may restore to a new value after rebinding. Logs and backups are not cleaned up.",
+                "confirmDelete": "Confirm permanent deletion"
+            }
+        },
         "saved": "Saved",
         "backup": {
             "title": "Backup / Restore",
@@ -530,6 +612,7 @@
         "card": {
             "error": "Error",
             "errorInfo": "Error Info",
+            "privacyTriggered": "Data masking triggered",
             "firstToken": "TTFT",
             "totalTime": "Total",
             "input": "Input",

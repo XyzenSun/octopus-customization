@@ -5,6 +5,7 @@ import "./operations/group.tsp";
 import "./operations/api-key.tsp";
 import "./operations/log.tsp";
 import "./operations/setting.tsp";
+import "./operations/privacy.tsp";
 import "./operations/circuit.tsp";
 import "./operations/stats.tsp";
 import "./operations/update.tsp";

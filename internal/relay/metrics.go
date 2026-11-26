@@ -30,7 +30,12 @@ type RelayMetrics struct {
 	Stats       model.StatsMetrics
 
 	// 无论指定渠道直连还是分组路由，这里都记录最终实际应用到上游的合并参数覆盖。
-	ParamOverride string
+    ParamOverride       string
+    PrivacyTriggered    bool
+    rawChannelUsage     map[int]model.StatsMetrics
+    executedChannelID   int
+    executedChannelName string
+    executedActualModel string
 }
 
 func (m *RelayMetrics) RecordUsage(usage *llm.Usage) {
@@ -38,13 +43,29 @@ func (m *RelayMetrics) RecordUsage(usage *llm.Usage) {
 		return
 	}
 
-	// usage 已由 axonhub/llm 标准化；octopus 仍使用本地模型价格表计算成本，所以这里只做用量落点和价格换算。
-	m.Stats.InputToken = usage.PromptTokens
-	m.Stats.OutputToken = usage.CompletionTokens
+    m.Stats = usageMetrics(m.ActualModel, usage)
+}
 
-	modelPrice := price.GetLLMPrice(m.ActualModel)
+func (m *RelayMetrics) RecordRawUsage(channelID int, usage *llm.Usage) float64 {
+    if usage == nil {
+        return 0
+    }
+    delta := usageMetrics(m.ActualModel, usage)
+    if m.rawChannelUsage == nil {
+        m.rawChannelUsage = make(map[int]model.StatsMetrics)
+    }
+    channelUsage := m.rawChannelUsage[channelID]
+    channelUsage.Add(delta)
+    m.rawChannelUsage[channelID] = channelUsage
+    m.Stats.Add(delta)
+    return delta.InputCost + delta.OutputCost
+}
+
+func usageMetrics(actualModel string, usage *llm.Usage) model.StatsMetrics {
+    stats := model.StatsMetrics{InputToken: usage.PromptTokens, OutputToken: usage.CompletionTokens}
+    modelPrice := price.GetLLMPrice(actualModel)
 	if modelPrice == nil {
-		return
+        return stats
 	}
 	tokenDetails := usage.PromptTokensDetails
 	if tokenDetails == nil {
@@ -55,10 +76,11 @@ func (m *RelayMetrics) RecordUsage(usage *llm.Usage) {
 	if nonCachedTokens < 0 {
 		nonCachedTokens = usage.PromptTokens
 	}
-	m.Stats.InputCost = (float64(tokenDetails.CachedTokens)*modelPrice.CacheRead +
+    stats.InputCost = (float64(tokenDetails.CachedTokens)*modelPrice.CacheRead +
 		float64(tokenDetails.WriteCachedTokens)*modelPrice.CacheWrite +
 		float64(nonCachedTokens)*modelPrice.Input) * 1e-6
-	m.Stats.OutputCost = float64(usage.CompletionTokens) * modelPrice.Output * 1e-6
+    stats.OutputCost = float64(usage.CompletionTokens) * modelPrice.Output * 1e-6
+    return stats
 }
 
 func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attempts []model.ChannelAttempt) {
@@ -78,11 +100,19 @@ func (m *RelayMetrics) Save(ctx context.Context, success bool, err error, attemp
 	}
 
 	channelID, channelName := finalChannel(attempts)
+    if m.executedChannelID != 0 {
+        channelID, channelName = m.executedChannelID, m.executedChannelName
+        m.ActualModel = m.executedActualModel
+    }
 	op.StatsTotalUpdate(globalStats)
 	op.StatsHourlyUpdate(globalStats)
 	op.StatsDailyUpdate(context.Background(), globalStats)
 	op.StatsAPIKeyUpdate(m.APIKeyID, globalStats)
-	if channelID > 0 {
+    if len(m.rawChannelUsage) > 0 {
+        for id, usage := range m.rawChannelUsage {
+            op.StatsChannelUpdate(id, usage)
+        }
+    } else if channelID > 0 {
 		// 通道成功/失败和等待时间在每次 attempt 结束时已记录；这里仅把最终响应的用量成本归到实际通道，避免重复计数。
 		op.StatsChannelUpdate(channelID, model.StatsMetrics{
 			InputToken:  m.Stats.InputToken,
@@ -128,6 +158,7 @@ func (m *RelayMetrics) saveLog(ctx context.Context, err error, duration time.Dur
 		UseTime:          int(duration.Milliseconds()),
 		Attempts:         attempts,
 		TotalAttempts:    len(attempts),
+        PrivacyTriggered: m.PrivacyTriggered,
 	}
 
 	if apiKey, getErr := op.APIKeyGet(m.APIKeyID, ctx); getErr == nil {

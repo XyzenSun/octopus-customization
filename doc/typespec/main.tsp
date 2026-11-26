@@ -12,7 +12,7 @@ using TypeSpec.OpenAPI;
 // 文档版本独立于运行程序版本, 保留已有契约的鉴权边界与实现限制.
 @service(#{ title: "Octopus HTTP API" })
 @info(#{ version: "1.0.0" })
-@doc("doc/typespec/*.tsp 是 Octopus HTTP 接口的唯一维护契约, 本 OpenAPI 文件由 TypeSpec 生成, 替代已废弃的 doc/API.md. version 表示文档版本, 运行程序版本通过 /api/v1/update/now-version 查询.\n\n契约依据当前 Go 路由, handler, model, op 和 go.mod 固定的 axonhub/llm 实现编写, 覆盖 60 个显式业务接口. 管理接口通常使用 /api/v1 前缀, LLM 兼容接口使用 /v1 前缀. 静态资源, CORS, 框架重定向和未匹配路由不在本契约范围内.\n\n管理成功响应包含 code: 200 和 message: success. 有业务载荷时包含 data, resp.Success(c, nil) 时省略 data. 有类型的空切片可能序列化为 null 或 [], 应按各接口 schema 判断. 本地错误使用 code 和 message, code 等于 HTTP 状态码. 指定渠道直连的特定上游 HTTP 错误按入站协议转换, 分组路由最终失败使用 Octopus 错误包装.\n\n分组路由先精确匹配完整请求模型. 分组不存在时, 可按第一个 / 将请求模型解析为 channelName/modelName, 执行一次指定渠道直连. 非空 supported_models 限制的 API Key 不允许指定渠道直连. 协议直通是协议一致时的转发优化, 保留原始协议扩展, 仍遵循选路和鉴权. 分组请求选项先应用, 渠道请求选项随后覆盖; 指定渠道直连只应用渠道请求选项.\n\n本契约记录现有行为, 不承诺数据库标签对应 HTTP 校验, 也不承诺所有上游扩展字段或跨协议能力无损兼容. 请求 schema 保持未知属性开放; schema 的类型表达不覆盖 Go 对 null 的全部宽松解析行为. 注明的实现风险尚未修复. 已进行源码静态审查, 未调用真实 API, 未验证数据库驱动差异, 运行配置或上游能力. Scalar 预览和 OpenAPI 校验不构成运行时验证.")
+@doc("doc/typespec/*.tsp 是 Octopus HTTP 接口的唯一维护契约, 本 OpenAPI 文件由 TypeSpec 生成, 替代已废弃的 doc/API.md. version 表示文档版本, 运行程序版本通过 /api/v1/update/now-version 查询.\n\n契约依据当前 Go 路由, handler, model, op 和 go.mod 固定的 axonhub/llm 实现编写, 覆盖 64 个显式业务接口. 管理接口通常使用 /api/v1 前缀, LLM 兼容接口使用 /v1 前缀. 静态资源, CORS, 框架重定向和未匹配路由不在本契约范围内.\n\n管理成功响应包含 code: 200 和 message: success. 有业务载荷时包含 data, resp.Success(c, nil) 时省略 data. 有类型的空切片可能序列化为 null 或 [], 应按各接口 schema 判断. 本地错误使用 code 和 message, code 等于 HTTP 状态码. 指定渠道直连的特定上游 HTTP 错误按入站协议转换, 分组路由最终失败使用 Octopus 错误包装.\n\n分组路由先精确匹配完整请求模型. 分组不存在时, 可按第一个 / 将请求模型解析为 channelName/modelName, 执行一次指定渠道直连. 非空 supported_models 限制的 API Key 不允许指定渠道直连. 协议直通是协议一致时的转发优化, 保留原始协议扩展, 仍遵循选路和鉴权. 已启用的隐私处理仍在实际出站和客户端写回边界改写选定文本, 不处理 embedding 或图片接口; 触发布尔值不代表全部内容成功脱敏. 分组请求选项先应用, 渠道请求选项随后覆盖; 指定渠道直连只应用渠道请求选项.\n\n本契约记录现有行为, 不承诺数据库标签对应 HTTP 校验, 也不承诺所有上游扩展字段或跨协议能力无损兼容. 请求 schema 保持未知属性开放; schema 的类型表达不覆盖 Go 对 null 的全部宽松解析行为. 注明的实现风险尚未修复. 已进行源码静态审查, 未调用真实 API, 未验证数据库驱动差异, 运行配置或上游能力. Scalar 预览和 OpenAPI 校验不构成运行时验证.")
 @server(
   "http://127.0.0.1:8080",
   "默认本机 API 地址示例. 调试前确认实际部署地址, 凭证和授权; 文档预览端口不提供 API 代理."
@@ -24,6 +24,7 @@ using TypeSpec.OpenAPI;
   #{ name: "APIKey", description: "终端用户 API Key 与当前 Key 的统计." },
   #{ name: "Log", description: "转发日志查询, 清理和 SSE 推送." },
   #{ name: "Setting", description: "运行期设置与数据库表导入, 导出." },
+  #{ name: "Privacy", description: "隐私规则管理, 请求快照与数据脱敏配置." },
   #{ name: "Circuit", description: "渠道级内存熔断状态与重置." },
   #{ name: "Model", description: "模型价格, 渠道模型视图和兼容模型列表." },
   #{ name: "Stats", description: "累计, 按日, 按小时与 API Key 统计." },

@@ -820,7 +820,7 @@ model ChannelAttempt {
   @doc("尝试序号, 可包含跳过项.")
   attempt_num: integer;
 
-  @doc("通常为 success, failed, circuit_break 或 skipped. 导入路径允许其他字符串, 因而响应 schema 不强制 enum.")
+  @doc("通常为 success, failed, circuit_break 或 skipped. 本地隐私失败或客户端断开可记 skipped 而最终请求失败, 不因此更新 Key 冷却或渠道失败/熔断; skipped 不证明上游未执行, 已捕获真实用量仍归实际渠道和 Key. 真实上游错误保留原归因. 导入路径允许其他字符串, 因而响应 schema 不强制 enum.")
   status: string;
 
   @doc("该尝试耗时, 毫秒.")
@@ -844,7 +844,7 @@ model RelayLog {
   request_model_name: string;
   request_api_key_name: string;
 
-  @doc("实际渠道 ID, 优先成功尝试, 否则最后失败尝试, 无此类尝试时可为 0.")
+  @doc("实际执行过原始 usage 观测的最后渠道优先, 包括本地隐私失败或取消; 否则优先成功尝试, 再取最后失败尝试, 无此类尝试时可为 0. 本地隐私失败的 skipped 项不等于上游未执行.")
   channel: integer;
 
   channel_name: string;
@@ -874,11 +874,14 @@ model RelayLog {
   @doc("所有记录的尝试, nil 时为 null, 不是省略字段.")
   attempts: ChannelAttempt[] | null;
 
+  @doc("请求级触发布尔, 始终输出. 仅实际出站采用了变化的正文或实际写回成功提交了变化的内容至少一次才为 true, 多次尝试逻辑 OR. 功能开启, 扫描无变化, 编译候选和放弃未提交改写不置 true. continue 可能在部分改写后失败, 因此 true 不保证全部内容成功脱敏. 旧日志或备份缺失字段视为 false. 请求日志仍基于内部请求和参数覆盖, 不回写脱敏后的出站 Body, 日志和备份仍可能保存原文. Source: internal/model/log.go; internal/relay/relay.go; internal/relay/metrics.go.")
+  privacy_triggered: boolean;
+
   @doc("attempts 长度, 包括跳过或熔断项, 不仅是实际上游调用次数.")
   total_attempts: integer;
 }
 
-@doc("运行期 KV 设置, key 和 value 均以字符串输出, 不强制 key enum, 缓存可含已加载的自定义 key. 当前默认值: proxy_url='', stats_save_interval='10', cors_allow_origins='*', model_info_update_interval='24', sync_llm_interval='24', relay_log_keep_period='7', relay_log_keep_enabled='true', relay_log_flush_size='50', relay_log_memory_cache_size='100', relay_log_max_content_size_mb='2', relay_log_memory_log_max_dimidiate_times='15', circuit_breaker_threshold='5', circuit_breaker_cooldown='60', circuit_breaker_max_cooldown='600', circuit_breaker_enabled='true', key_circuit_breaker_enabled='true', passthrough_enabled='false', two_factor_enabled='false'. /setting/set 校验: proxy_url 允许空字符串, 非空仅 http/https/socks5 且 host 非空; model_info_update_interval, sync_llm_interval, relay_log_keep_period, relay_log_flush_size, relay_log_memory_cache_size 和三个熔断数值只校验可解析为 Go int, 不要求正数; relay_log_max_content_size_mb 要求整数 >= -1, -1 不限正文, 0 仅允许零正文大小; relay_log_memory_log_max_dimidiate_times 要求 -1 或正整数; relay_log_keep_enabled, circuit_breaker_enabled, key_circuit_breaker_enabled, passthrough_enabled 仅接受字符串 true/false; two_factor_enabled 在 handler 直接 403; stats_save_interval 和 cors_allow_origins 没有内容校验. 运行时日志刷写或内存上限负值回退默认, flush 0 实时写数据库, memory 0 不记日志, 内存 dimidiate=-1 同时绕过折半清理而不保证硬缓存上限. keep_period<=0 不清理历史, 熔断数值<=0 回退 5/60/600. stats_save_interval 修改不热更新任务. 导入不执行这些 /set 校验, 导入和导出都过滤 two_factor_enabled. Source: internal/model/setting.go:11-138; internal/server/handlers/setting.go:51-87; internal/op/log.go:145-268; internal/relay/balancer/circuit.go:74-106.")
+@doc("运行期 KV 设置. 隐私配置复用此接口: privacy_enabled 默认字符串 false, 仅接受 true/false; privacy_scopes 默认字符串 1, 仅接受十进制数字组成的 Go int 值 0-15, Messages=1, ToolDefinitions=2, ToolCalls=4, ToolResponses=8, 0 关闭全部范围; privacy_failure_policy 默认字符串 continue, 仅接受 continue/abort. 隐私 value 必须是字符串, null 或其他类型拒绝. 三个隐私 key 通过 PrivacySetSetting 与完整规则集合校验, 提交后一起发布请求快照, 不独立更新开关缓存. Source: internal/model/setting.go; internal/op/privacy.go. key 和 value 均以字符串输出, 不强制 key enum, 缓存可含已加载的自定义 key. 当前默认值: proxy_url='', stats_save_interval='10', cors_allow_origins='*', model_info_update_interval='24', sync_llm_interval='24', relay_log_keep_period='7', relay_log_keep_enabled='true', relay_log_flush_size='50', relay_log_memory_cache_size='100', relay_log_max_content_size_mb='2', relay_log_memory_log_max_dimidiate_times='15', circuit_breaker_threshold='5', circuit_breaker_cooldown='60', circuit_breaker_max_cooldown='600', circuit_breaker_enabled='true', key_circuit_breaker_enabled='true', passthrough_enabled='false', two_factor_enabled='false', privacy_enabled='false', privacy_scopes='1', privacy_failure_policy='continue'. /setting/set 校验: proxy_url 允许空字符串, 非空仅 http/https/socks5 且 host 非空; model_info_update_interval, sync_llm_interval, relay_log_keep_period, relay_log_flush_size, relay_log_memory_cache_size 和三个熔断数值只校验可解析为 Go int, 不要求正数; relay_log_max_content_size_mb 要求整数 >= -1, -1 不限正文, 0 仅允许零正文大小; relay_log_memory_log_max_dimidiate_times 要求 -1 或正整数; relay_log_keep_enabled, circuit_breaker_enabled, key_circuit_breaker_enabled, passthrough_enabled 仅接受字符串 true/false; two_factor_enabled 在 handler 直接 403; stats_save_interval 和 cors_allow_origins 没有内容校验. 运行时日志刷写或内存上限负值回退默认, flush 0 实时写数据库, memory 0 不记日志, 内存 dimidiate=-1 同时绕过折半清理而不保证硬缓存上限. keep_period<=0 不清理历史, 熔断数值<=0 回退 5/60/600. stats_save_interval 修改不热更新任务. 导入逐行执行 Setting.Validate, 隐私配置另与完整候选规则集合校验及编译, 同一事务提交后发布; 导入和导出都过滤 two_factor_enabled. Source: internal/model/setting.go; internal/server/handlers/setting.go; internal/op/backup.go; internal/op/privacy.go; internal/op/log.go:145-268; internal/relay/balancer/circuit.go:74-106.")
 model Setting {
   @doc("设置键, 不强制预定义 enum.")
   key: string;
@@ -887,7 +890,70 @@ model Setting {
   value: string;
 }
 
-@doc("宽松 Setting 输入, key 和 value 没有 required binding, 遗漏或 null 进入 Go 字符串零值. /set 再执行按 key 校验和缓存存在性检查, 导入则不调用 Validate. 预定义键, 默认和校验见 Setting, 此 schema 不把它们作为导入约束.")
+@doc("隐私规则创建输入. source/alias 必填且非 null, 不 trim, 不转大小写或归一化. 其他未知属性忽略; id 为兼容解码字段, 提供时须能被 Go int JSON 解码或为 null, 但创建不会采用其值. enabled 缺省为 true, 显式 false 保留, 显式 null 或其他类型拒绝. 停用规则仍占用两个独立唯一键. Source: internal/model/privacy.go; internal/op/privacy.go.")
+model PrivacyRuleCreate {
+  @doc("原文, 必须是有效 UTF-8, 长度 1-512 bytes, 可包含合法 NUL, 空白及换行. 字节长度不是字符数; 无效 UTF-8 和孤立 surrogate 拒绝.")
+  @minLength(1)
+  @extension("x-utf8-byte-length", #{ min: 1, max: 512 })
+  source: string;
+
+  @doc("别名, 严格 ASCII [A-Z0-9_]{1,64}, 不自动转大写. 标记格式固定为 [[OCTOPUS_PII:ALIAS]], 不可配置.")
+  @minLength(1)
+  @maxLength(64)
+  @pattern("^[A-Z0-9_]{1,64}$")
+  `alias`: string;
+
+  @doc("兼容解码字段, 可省略或为 null. 非 null 值必须能被当前架构的 Go int JSON 解码, 不接受字符串、小数或指数表示, 不检查正数. 创建始终使用数据库生成的 ID, 不采用这个输入值, 也不以其值检查主键冲突.")
+  id?: integer | null;
+
+  @doc("新规则默认启用, 显式 false 保留, null 拒绝.")
+  enabled?: boolean = true;
+}
+
+@doc("隐私规则完整更新输入, 不是 patch. 必须提供有效正 ID 及完整 source/alias/enabled; 任何字段缺失或 null 均拒绝. 启停同样提交完整规则. Source: internal/model/privacy.go; internal/op/privacy.go.")
+model PrivacyRuleUpdate {
+  ...OmitProperties<PrivacyRuleCreate, "enabled" | "id">;
+
+  @doc("目标规则自增 ID, 必须能解析为当前架构的 Go int 且大于 0.")
+  @minValue(1)
+  id: integer;
+
+  @doc("目标启用状态, 必填, false 显式写入, null 拒绝.")
+  enabled: boolean;
+}
+
+@doc("管理隐私规则响应. 四个字段始终输出, source/alias 是明文 JSON 字符串, 不是 base64. source 和 alias 分别全表唯一, 停用规则仍占用唯一键. 硬删除释放两个键, 不保留旧反查; 复用/改绑别名可能改变历史标记含义. 管理修改仅影响后续请求, 当前请求保持原快照. Source: internal/model/privacy.go; internal/op/privacy.go.")
+model PrivacyRule {
+  ...PrivacyRuleUpdate;
+}
+
+@doc("隐私规则备份导入项, 不复用完整更新的 enabled 必填要求. id 必须是正 Go int, source/alias 与创建使用同一严格校验, 顶层项不能为 null. enabled 省略默认 true, 显式 false 保留, null 拒绝. 完全相同 source/alias 映射幂等跳过并保留目标 id/enabled; 新映射保留备份 id, 主键或任一映射键冲突整次失败, 不重映射 ID. Source: internal/model/privacy.go; internal/op/backup.go.")
+model PrivacyRuleImport {
+  ...OmitProperties<PrivacyRuleCreate, "id">;
+
+  @doc("备份中的自增主键, 必须能解析为当前架构的 Go int 且大于 0. 新映射使用该值插入.")
+  @minValue(1)
+  id: integer;
+}
+
+@doc("Setting 输入的普通 key/value 没有 required binding, 遗漏或 null 进入 Go 字符串零值. 例外: 三个隐私 key 的 value 必须提供非 null 字符串, 严格解码拒绝无效 UTF-8, 孤立 surrogate 和其他 JSON 类型. /set 只更新缓存中已有 key, 导入可 upsert key; 两者均执行 Setting.Validate, 隐私设置另通过完整配置和规则候选校验及编译. 预定义键, 默认和校验见 Setting, 不把所有 key 强制为 enum. Source: internal/server/handlers/setting.go; internal/model/backup.go; internal/op/backup.go.")
+@extension(
+  "allOf",
+  #[
+    #{
+      `if`: #{
+        type: "object",
+        required: #["key"],
+        properties: #{
+          key: #{
+            `enum`: #["privacy_enabled", "privacy_scopes", "privacy_failure_policy"],
+          },
+        },
+      },
+      then: #{ required: #["value"], properties: #{ value: #{ type: "string" } } },
+    }
+  ]
+)
 union SettingInput {
   {
     key?: string | null,
@@ -896,7 +962,7 @@ union SettingInput {
   null,
 }
 
-@doc("数据库导出主体, 不是完整用户或原子运行态快照. 顶层四项元数据必有, version 当前固定 1. 所有表数组带 omitempty, 空时字段省略而不是固定 [] 或 null. channels 不 Preload keys 或 stats, groups 不 Preload items, 对应关联在单独顶层数组. settings 排除 two_factor_enabled. include_stats 和 include_logs 为 false 时相应顶层表不会导出. Source: internal/model/backup.go:7-28; internal/op/backup.go:16-76.")
+@doc("数据库导出主体, 不是完整用户或原子运行态快照. 顶层四项元数据必有, version 当前固定 1. privacy_rules 始终输出非 null 数组, 空规则为 []; 其他表数组带 omitempty, 空时字段省略而不是固定 [] 或 null. channels 不 Preload keys 或 stats, groups 不 Preload items, 对应关联在单独顶层数组. settings 排除 two_factor_enabled. 导出持同一隐私写锁并使用静默只读事务, 取得规则和三个隐私设置的一致版本; 不先 flush 日志, 统计或 Key 缓存, 不保证全部运行态已落库. source/alias, 日志和密钥可能含明文. include_stats 和 include_logs 为 false 时相应顶层表不会导出. Source: internal/model/backup.go; internal/op/backup.go.")
 model DBDump {
   @extension("type", "integer")
   @doc("当前导出格式版本.")
@@ -915,6 +981,10 @@ model DBDump {
   llm_infos?: LLMInfo[];
   api_keys?: APIKey[];
   settings?: Setting[];
+
+  @doc("全部隐私规则, 按 id 升序, 含停用项. 不受 include_logs/include_stats 控制, 空集合为 [], 明文 JSON 字符串不是 base64.")
+  privacy_rules: PrivacyRule[];
+
   stats_total?: StatsTotal[];
   stats_daily?: StatsDaily[];
   stats_hourly?: StatsHourly[];
@@ -924,7 +994,7 @@ model DBDump {
   relay_logs?: RelayLog[];
 }
 
-@doc("宽松增量导入对象. 无 required, 未知字段允许并被 Go JSON 解码忽略, JSON null 或 {} 可走空导入. version 缺失或 null 成为 0, 仅 0 或 1 被业务接受, 其他版本返回 400, 此处以描述记录版本校验而不把导出 const 复用于输入. exported_at 若提供必须能被 Go time.Time 解码, 可遗漏或为 null, 未用于恢复逻辑. 数组遗漏, null 或 [] 都表示无对应行. include 标志缺失或 null 默认为 false, 只有相应标志为 true 才处理顶层日志或统计. 不调用实体创建校验或 Setting.Validate, 不强制枚举, 非负数或日期业务规则. 整数仍必须符合对应 Go 类型解析范围. Source: internal/server/handlers/setting.go:153-186; internal/model/backup.go:7-28; internal/op/backup.go:79-175.")
+@doc("增量导入对象. 顶层无 required, 未知字段允许并被 Go JSON 解码忽略, JSON null 或 {} 可走空导入. version 缺失或 null 成为 0, 仅 0 或 1 被业务接受, 其他版本返回 400, 不把导出 const 复用于输入. exported_at 若提供必须能被 Go time.Time 解码, 可遗漏或为 null, 未用于恢复逻辑. 数组遗漏, null 或 [] 都表示无对应行, 旧版本 0/1 备份没有 privacy_rules 不删除现有规则. include 标志缺失或 null 默认为 false, 只有相应标志为 true 才处理顶层日志或统计; 隐私规则不受它们控制. 普通实体不调用创建校验, 但全部保留的 Setting 逐行执行 Validate, 三个隐私 key 严格要求字符串并与完整候选规则一起编译. privacy_rules 项执行严格规则和正 ID 校验, enabled 缺省 true, 显式 false 保留, null 拒绝. 其他实体仍不强制枚举, 非负数或日期业务规则, 整数必须符合对应 Go 类型解析范围. 事务失败不发布快照或部分导入; 已提交但其他缓存刷新失败为固定 500, 不表示数据库回滚. Source: internal/server/handlers/setting.go; internal/model/backup.go; internal/op/backup.go.")
 union DBDumpInput {
   {
     @doc("业务接受 0 或 1, 缺失或 null 进入 0, 其他值返回 400.")
@@ -947,6 +1017,10 @@ union DBDumpInput {
     llm_infos?: DBDumpInputllm_infosItemValue[] | null,
     api_keys?: DBDumpInputapi_keysItemValue[] | null,
     settings?: SettingInput[] | null,
+
+    @doc("旧备份可省略, null 或 [] 同样不删除现有规则. 新映射保留备份 ID, 同映射幂等跳过, 冲突整次失败.")
+    privacy_rules?: PrivacyRuleImport[] | null,
+
     stats_total?: StatsTotalInput[] | null,
     stats_daily?: StatsDailyInput[] | null,
     stats_hourly?: StatsHourlyInput[] | null,
@@ -958,7 +1032,7 @@ union DBDumpInput {
   null,
 }
 
-@doc("导入兼容形态, anyOf 不表示严格或互斥解包规则. 裸 DBDumpInput 已允许未知字段, 因而任意含 data 的对象仍可能按裸对象处理. 仅当外层 version 为 0 且受检查业务数组全空时才尝试一层 wrapper, 条件漏查 channel_keys, 不检查元数据标志; code/message 不必提供或满足成功值, wrapper 解码失败被忽略. 精确规则见 importDatabase. JSON null 由 DBDumpInput 兼容.")
+@doc("导入兼容形态, anyOf 不表示严格或互斥解包规则. 裸 DBDumpInput 已允许未知字段, 因而任意含 data 的对象仍可能按裸对象处理. 仅当外层 version 为 0 且全部受检查业务数组全空时才尝试一层 wrapper, 包括 channel_keys 和 privacy_rules, 不检查元数据标志; code/message 不必提供或满足成功值, wrapper 解码失败被忽略. 成功解码 data 时, 自定义 DBDump 解码重新构造整个 dump, 不保留未提供的外层业务字段. 精确规则见 importDatabase. JSON null 由 DBDumpInput 兼容.")
 union DBDumpImportBody {
   DBDumpInput,
   {
@@ -972,7 +1046,7 @@ union DBDumpImportBody {
   },
 }
 
-@doc("逐表 RowsAffected, 依数据库驱动和冲突策略而异, 不是稳定的新增行数. 基础 channels, channel_keys, groups, group_items, llm_infos, api_keys, settings 总有键, 空操作为 0. stats_total, stats_daily, stats_hourly, stats_model, stats_channel, stats_api_key 仅 include_stats=true 时有键. relay_logs 仅 include_logs=true 时有键. Source: internal/model/backup.go:31-33; internal/op/backup.go:89-175.")
+@doc("逐表 RowsAffected, 依数据库驱动和冲突策略而异, 不是稳定的新增行数. 基础 channels, channel_keys, groups, group_items, llm_infos, api_keys, settings 和 privacy_rules 总有键, 空操作为 0; privacy_rules 只累计新插入映射, 同映射幂等跳过不计入. stats_total, stats_daily, stats_hourly, stats_model, stats_channel, stats_api_key 仅 include_stats=true 时有键. relay_logs 仅 include_logs=true 时有键. Source: internal/model/backup.go; internal/op/backup.go.")
 model DBImportResult {
   @doc("数据库操作受影响行数映射.")
   rows_affected: {
@@ -1181,6 +1255,10 @@ union RelayLogInput {
     response_content?: string | null,
     error?: string | null,
     attempts?: ChannelAttemptInput[] | null,
+
+    @doc("旧日志备份缺失或 null 时为 false, 显式布尔值保存. 不根据开关, 正文或规则重新计算触发状态.")
+    privacy_triggered?: boolean | null,
+
     total_attempts?: integer | null,
   },
   null,

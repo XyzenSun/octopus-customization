@@ -43,9 +43,15 @@ export interface RelayLog {
     request_content: string;     // 请求内容
     response_content: string;    // 响应内容
     error: string;               // 错误信息
+    privacy_triggered: boolean; // 仅实际提交过隐私改写时为 true
     attempts?: ChannelAttempt[]; // 所有尝试记录
     total_attempts?: number;     // 总尝试次数
 }
+
+/** 旧备份可能缺少触发布尔值，读取时仅严格等于 true 才展示标记。 */
+export type LegacyRelayLog = Omit<RelayLog, 'privacy_triggered'> & {
+    privacy_triggered?: boolean;
+};
 
 /**
  * 日志列表查询参数
@@ -76,8 +82,8 @@ export function useClearLogs() {
             logger.log('日志清空成功');
             queryClient.invalidateQueries({ queryKey: ['logs'] });
         },
-        onError: (error) => {
-            logger.error('日志清空失败:', error);
+        onError: () => {
+            logger.error('日志清空失败');
         },
     });
 }
@@ -147,8 +153,8 @@ export function useLogs(options: { pageSize?: number } = {}) {
 
         try {
             await logsQuery.fetchNextPage();
-        } catch (e) {
-            logger.error('加载更多日志失败:', e);
+        } catch {
+            logger.error('加载更多日志失败');
         }
     }, [logsQuery]);
 
@@ -185,8 +191,9 @@ export function useLogs(options: { pageSize?: number } = {}) {
                                 return { ...old, pages: [[log, ...firstPage], ...old.pages.slice(1)] };
                             }
                         );
-                    } catch (e) {
-                        logger.error('解析日志数据失败:', e);
+                    } catch {
+                        // JSON 解析错误可能包含正文片段，不输出错误对象或原始事件。
+                        logger.error('解析日志数据失败');
                     }
                 };
 
@@ -199,7 +206,7 @@ export function useLogs(options: { pageSize?: number } = {}) {
             } catch (e) {
                 if (cancelled) return;
                 setError(e instanceof Error ? e : new Error('获取 stream token 失败'));
-                logger.error('获取 stream token 失败:', e);
+                logger.error('获取 stream token 失败');
             }
         };
 

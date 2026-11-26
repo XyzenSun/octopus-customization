@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,6 +25,11 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	flag.Parse()
+	if *octopusPrivacyWorker {
+		os.Exit(m.Run())
+	}
+
 	dir, err := os.MkdirTemp("", "octopus-direct-channel-test-")
 	if err != nil {
 		panic(err)
@@ -318,9 +324,9 @@ func TestWriteDirectChannelUpstreamError(t *testing.T) {
 		Detail:     llm.ErrorDetail{Message: "rate limited", Type: "rate_limit_error"},
 	})
 
-	statusCode, written := attempt.writeDirectChannelUpstreamError(context.Background(), directErrorInbound{}, upstreamErr)
-	if !written || statusCode != http.StatusTooManyRequests {
-		t.Fatalf("writeDirectChannelUpstreamError() = (%d, %t)", statusCode, written)
+	statusCode, written, err := attempt.writeDirectChannelUpstreamError(context.Background(), directErrorInbound{}, upstreamErr)
+	if err != nil || !written || statusCode != http.StatusTooManyRequests {
+		t.Fatalf("writeDirectChannelUpstreamError() = (%d, %t, %v)", statusCode, written, err)
 	}
 	if recorder.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d", recorder.Code)
@@ -346,10 +352,10 @@ func TestWriteDirectChannelUpstreamErrorRejectsNetworkError(t *testing.T) {
 		metrics:   &RelayMetrics{},
 	}}
 
-	if statusCode, written := attempt.writeDirectChannelUpstreamError(
+	if statusCode, written, err := attempt.writeDirectChannelUpstreamError(
 		context.Background(), directErrorInbound{}, pipeline.WrapUpstreamError(errors.New("dial failed")),
-	); written || statusCode != 0 {
-		t.Fatalf("network error unexpectedly written: status=%d written=%t", statusCode, written)
+	); err != nil || written || statusCode != 0 {
+		t.Fatalf("network error unexpectedly written: status=%d written=%t error=%v", statusCode, written, err)
 	}
 	if recorder.Code != http.StatusOK || recorder.Body.Len() != 0 {
 		t.Fatalf("unexpected response: status=%d body=%q", recorder.Code, recorder.Body.String())

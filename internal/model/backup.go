@@ -1,6 +1,11 @@
 package model
 
-import "time"
+import (
+    "encoding/json"
+    "time"
+
+    "github.com/bestruirui/octopus/internal/privacy"
+)
 
 // DBDump is a full-database JSON export format for Octopus.
 // Import uses incremental semantics (insert new rows, and upsert on certain key-based tables).
@@ -17,6 +22,7 @@ type DBDump struct {
 	LLMInfos   []LLMInfo   `json:"llm_infos,omitempty"`
 	APIKeys    []APIKey    `json:"api_keys,omitempty"`
 	Settings   []Setting   `json:"settings,omitempty"`
+    PrivacyRules []PrivacyRule `json:"privacy_rules"`
 
 	StatsTotal   []StatsTotal   `json:"stats_total,omitempty"`
 	StatsDaily   []StatsDaily   `json:"stats_daily,omitempty"`
@@ -26,6 +32,46 @@ type DBDump struct {
 	StatsAPIKey  []StatsAPIKey  `json:"stats_api_key,omitempty"`
 
 	RelayLogs []RelayLog `json:"relay_logs,omitempty"`
+}
+
+// 备份中的隐私设置值也需严格校验. 仅用字符串字段会将 null 当作零值,
+// 且类型错误可能泄露输入内容.
+func (dump *DBDump) UnmarshalJSON(data []byte) error {
+    type plainDump DBDump
+    var decoded plainDump
+    wire := struct {
+        *plainDump
+        Settings json.RawMessage `json:"settings"`
+    }{plainDump: &decoded}
+    if err := json.Unmarshal(data, &wire); err != nil {
+        return err
+    }
+    if len(wire.Settings) != 0 {
+        var settings []struct {
+            Key   SettingKey      `json:"key"`
+            Value json.RawMessage `json:"value"`
+        }
+        if err := json.Unmarshal(wire.Settings, &settings); err != nil {
+            return err
+        }
+        for _, row := range settings {
+            var value string
+            if IsPrivacySettingKey(row.Key) {
+                var err error
+                value, err = privacy.DecodeJSONString(row.Value)
+                if err != nil {
+                    return privacy.ErrInvalidConfig
+                }
+            } else if len(row.Value) != 0 {
+                if err := json.Unmarshal(row.Value, &value); err != nil {
+                    return err
+                }
+            }
+            decoded.Settings = append(decoded.Settings, Setting{Key: row.Key, Value: value})
+        }
+    }
+    *dump = DBDump(decoded)
+    return nil
 }
 
 type DBImportResult struct {

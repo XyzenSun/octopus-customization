@@ -230,6 +230,88 @@
                 "model": "模型"
             }
         },
+        "privacy": {
+            "title": "数据脱敏",
+            "description": "默认关闭, 至少有一条启用规则才生效. 更改只影响新请求, 进行中的请求保持原快照. 协议直通不会绕过脱敏.",
+            "enabled": "启用数据脱敏",
+            "loading": "加载中...",
+            "pending": "操作进行中",
+            "retry": "重试",
+            "saved": "脱敏设置已保存",
+            "saveFailed": "保存脱敏设置失败",
+            "settingsLoadFailed": "无法加载有效的脱敏设置, 请确认后端支持此功能.",
+            "refreshFailed": "更改已保存, 但刷新失败. 请重新加载后再继续修改.",
+            "scopes": {
+                "title": "处理范围",
+                "hint": "请求与响应使用相同范围, 不区分历史和新增内容. 默认只勾选普通消息.",
+                "messages": {
+                    "label": "普通消息",
+                    "hint": "包括 prompt、system prompt 和模型回复, 不处理推理和媒体."
+                },
+                "toolDefinitions": {
+                    "label": "工具定义",
+                    "hint": "仅处理 description(包括 schema 描述); enum/pattern 等约束保持原样, 其中敏感值仍可能发送给上游, 描述变化可能影响模型理解."
+                },
+                "toolCalls": {
+                    "label": "工具调用",
+                    "hint": "参数字符串变化可能影响 schema 和长度/位置约束. 关闭后模型生成的占位符不会在工具参数中还原, 可能被工具写入文件."
+                },
+                "toolResponses": {
+                    "label": "工具响应",
+                    "hint": "文件文字被替换后, 模型看到的字节/字符/行列可能不同于实际文件, 后续 offset/edit 工具可能失败, 系统不换算位置."
+                },
+                "none": "全部范围已关闭: 不改写内容, 也不产生脱敏触发标记.",
+                "defaultWarning": "注意: 默认只选普通消息, 工具调用参数默认不还原; 普通消息生成的占位符可能被客户端工具直接写入文件."
+            },
+            "failurePolicy": {
+                "label": "脱敏失败策略",
+                "continue": "continue — 继续(默认)",
+                "abort": "abort — 中止请求",
+                "continueHint": "continue 可能放弃脱敏: 请求处理失败时发送原始正文, 响应处理失败时可能不还原占位符. 流式失败会丢弃未提交改写, 剩余响应不再还原, 已发送内容无法回滚.",
+                "abortHint": "abort 停止处理: 请求侧失败不发送上游, 未写回的非流式响应返回 502; 已开始的流式响应直接断开, 不伪造完成事件."
+            },
+            "risks": {
+                "title": "限制与风险",
+                "exclusions": "embedding 和图片生成/编辑/变体的请求、响应及错误均不处理. 对话中的媒体、文件 URL 和二进制不扫描; 推理/thinking/摘要、协议签名和加密内容始终不处理.",
+                "metadata": "协议模型名、角色、工具名、ID、JSON 键、Header、query 和非字符串标量保持原样, annotations/citations、引用偏移、logprobs 和 usage 也不改. 系统不协调工具 schema 或文件 offset/range/行列, 不包装客户端工具执行, 不保证文字长度变化后的定位元数据正确.",
+                "plaintext": "原文仍可能保存在请求日志、规则表和备份中, 响应日志保留现有策略. 系统不会自动清理或加密, 请自行管理访问权限与保存期限.",
+                "history": "硬删除或改绑可能改变历史占位符含义. 删除后不保留旧反查, 别名可复用, 历史占位符可能还原为新绑定的原文. 停用规则也会同时停止替换与还原.",
+                "continue": "默认 continue 策略可能放弃脱敏并暴露原文. 日志中的“触发数据脱敏”仅表示实际发送过部分改写内容, 不代表所有内容都已成功脱敏."
+            },
+            "rules": {
+                "title": "替换规则",
+                "hint": "精确匹配且区分大小写, 不 trim 或归一化. 原文和别名分别全表唯一, 停用规则仍占用这两个值, 并同时退出替换与还原.",
+                "add": "新建规则",
+                "empty": "暂无规则",
+                "loadFailed": "加载脱敏规则失败",
+                "source": "原文",
+                "alias": "别名",
+                "sourceHint": "{bytes} / 512 UTF-8 字节. 必须为有效 UTF-8, 长度 1–512 字节; 换行及首尾空白原样保留.",
+                "sourceInvalid": "原文必须为有效 UTF-8, 长度为 1–512 字节.",
+                "aliasHint": "严格限制为 1–64 个 ASCII 字符: A–Z、0–9 或 _; 不 trim, 也不自动转大写.",
+                "aliasInvalid": "别名只能包含 A–Z、0–9 和 _, 长度必须为 1–64.",
+                "enabled": "启用",
+                "disabled": "停用",
+                "toggle": "启用或停用规则 #{id}",
+                "edit": "编辑",
+                "delete": "硬删除",
+                "createTitle": "新建脱敏规则",
+                "editTitle": "编辑脱敏规则",
+                "formHint": "新规则默认启用, 后端执行最终校验. 规则启停同时控制原文替换与占位符还原.",
+                "create": "创建",
+                "save": "保存",
+                "cancel": "取消",
+                "created": "脱敏规则已创建",
+                "updated": "脱敏规则已更新",
+                "deleted": "脱敏规则已永久删除",
+                "createFailed": "创建脱敏规则失败",
+                "updateFailed": "更新脱敏规则失败",
+                "deleteFailed": "删除脱敏规则失败",
+                "deleteTitle": "永久删除这条规则?",
+                "deleteWarning": "危险: 硬删除不可撤销. 新请求不再替换或还原此映射, 旧反查不会保留. 原文和别名可被复用, 改绑后历史占位符可能还原为新值; 日志与备份不会被清理.",
+                "confirmDelete": "确认永久删除"
+            }
+        },
         "saved": "已保存",
         "backup": {
             "title": "备份 / 恢复",
@@ -530,6 +612,7 @@
         "card": {
             "error": "错误",
             "errorInfo": "错误信息",
+            "privacyTriggered": "触发数据脱敏",
             "firstToken": "首字",
             "totalTime": "总耗时",
             "input": "输入",

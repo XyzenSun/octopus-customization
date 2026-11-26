@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	dbmodel "github.com/bestruirui/octopus/internal/model"
+    "github.com/bestruirui/octopus/internal/privacy"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
 	"github.com/gin-gonic/gin"
 	"github.com/looplj/axonhub/llm"
@@ -28,14 +29,18 @@ type relayRun struct {
 	group              dbmodel.Group
 	routeMode          routeMode
 	passthroughEnabled bool
+    privacySnapshot    *privacy.Snapshot
 }
 
 // relayAttempt 保存一次上游通道尝试的状态。
 type relayAttempt struct {
 	*relayRun
 
-	outAdapter transformer.Outbound
-	channel    *dbmodel.Channel
-	usedKey    dbmodel.ChannelKey
-	httpClient *http.Client
+    outAdapter            transformer.Outbound
+    channel               *dbmodel.Channel
+    usedKey               dbmodel.ChannelKey
+    httpClient            *http.Client
+    rawUsage              *RawUsageCapture
+    privacyRequestChanged bool
+    upstreamExecuted      bool
 }

@@ -41,20 +41,34 @@ func ChannelCreate(channel *model.Channel, ctx context.Context) error {
 
 // ChannelKeyUpdate 原子更新 ChannelKey 的运行状态和费用增量，并标记为需要持久化。
 func ChannelKeyUpdate(key model.ChannelKey, costDelta float64) error {
-	if key.ID == 0 || key.ChannelID == 0 {
+    if key.ChannelID == 0 {
+        return fmt.Errorf("invalid channel key")
+    }
+    return channelKeyUpdateRuntime(key.ID, &key, costDelta)
+}
+
+// ChannelKeyAddCost 保留已发生的费用, 避免本地失败或取消覆盖上游冷却状态.
+func ChannelKeyAddCost(keyID int, costDelta float64) error {
+    return channelKeyUpdateRuntime(keyID, nil, costDelta)
+}
+
+func channelKeyUpdateRuntime(keyID int, key *model.ChannelKey, costDelta float64) error {
+    if keyID == 0 {
 		return fmt.Errorf("invalid channel key")
 	}
 	channelKeyCacheNeedUpdateLock.Lock()
 	defer channelKeyCacheNeedUpdateLock.Unlock()
-	current, ok := channelKeyCache.Get(key.ID)
+    current, ok := channelKeyCache.Get(keyID)
 	if !ok {
 		return fmt.Errorf("channel key not found")
 	}
+    if key != nil {
 	current.StatusCode = key.StatusCode
 	current.LastUseTimeStamp = key.LastUseTimeStamp
+    }
 	current.TotalCost += costDelta
-	channelKeyCache.Set(key.ID, current)
-	channelKeyCacheNeedUpdate[key.ID] = struct{}{}
+    channelKeyCache.Set(keyID, current)
+    channelKeyCacheNeedUpdate[keyID] = struct{}{}
 	return nil
 }
 

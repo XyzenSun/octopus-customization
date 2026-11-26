@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+
+    "github.com/bestruirui/octopus/internal/privacy"
 )
 
 type SettingKey string
@@ -27,6 +29,9 @@ const (
 	SettingKeyKeyCircuitBreakerEnabled           SettingKey = "key_circuit_breaker_enabled"              // Key 级熔断器开关（上游返回 401/403/429/503 时冷却该 Key）
 	SettingKeyPassthroughEnabled                 SettingKey = "passthrough_enabled"                      // 协议直通全局开关
 	SettingKeyTwoFactorEnabled                   SettingKey = "two_factor_enabled"                       // 两步验证(TOTP)开关，密钥另存于 users 表
+    SettingKeyPrivacyEnabled                    SettingKey = "privacy_enabled"                          // 数据脱敏全局开关
+    SettingKeyPrivacyScopes                     SettingKey = "privacy_scopes"                           // 数据脱敏范围位掩码
+    SettingKeyPrivacyFailurePolicy              SettingKey = "privacy_failure_policy"                   // 数据脱敏失败策略
 )
 
 // 默认值常量
@@ -37,9 +42,54 @@ const (
 	DefaultRelayLogMemoryLogMaxDimidiateTimes = 15  // 默认折半 GC 触发次数
 )
 
+const (
+    DefaultPrivacyEnabled       = "false"
+    DefaultPrivacyScopes        = "1"
+    DefaultPrivacyFailurePolicy = "continue"
+)
+
 type Setting struct {
 	Key   SettingKey `json:"key" gorm:"primaryKey"`
 	Value string     `json:"value" gorm:"not null"`
+}
+
+// IsPrivacySettingKey 供通用设置写入口分流, 隐私设置必须随快照事务发布.
+func IsPrivacySettingKey(key SettingKey) bool {
+    switch key {
+    case SettingKeyPrivacyEnabled, SettingKeyPrivacyScopes, SettingKeyPrivacyFailurePolicy:
+        return true
+    default:
+        return false
+    }
+}
+
+// ParsePrivacyConfig 从完整的三个字符串设置构造中性配置, 不补缺失默认值.
+// 所有失败只返回固定错误, 不包含设置原值.
+func ParsePrivacyConfig(enabled, scopes, failurePolicy string) (privacy.Config, error) {
+    if enabled != "true" && enabled != "false" {
+        return privacy.Config{}, privacy.ErrInvalidConfig
+    }
+    if scopes == "" {
+        return privacy.Config{}, privacy.ErrInvalidConfig
+    }
+    for index := 0; index < len(scopes); index++ {
+        if scopes[index] < '0' || scopes[index] > '9' {
+            return privacy.Config{}, privacy.ErrInvalidConfig
+        }
+    }
+    scopeValue, err := strconv.Atoi(scopes)
+    if err != nil || scopeValue < 0 || scopeValue > int(privacy.AllScopes) {
+        return privacy.Config{}, privacy.ErrInvalidConfig
+    }
+    config := privacy.Config{
+        Enabled:       enabled == "true",
+        Scopes:        privacy.Scope(scopeValue),
+        FailurePolicy: privacy.FailurePolicy(failurePolicy),
+    }
+    if err := privacy.ValidateConfig(config); err != nil {
+        return privacy.Config{}, privacy.ErrInvalidConfig
+    }
+    return config, nil
 }
 
 func DefaultSettings() []Setting {
@@ -62,11 +112,26 @@ func DefaultSettings() []Setting {
 		{Key: SettingKeyKeyCircuitBreakerEnabled, Value: "true"},         // 默认启用 Key 级熔断器（与历史行为一致）
 		{Key: SettingKeyPassthroughEnabled, Value: "false"},              // Beta 功能默认关闭协议直通
 		{Key: SettingKeyTwoFactorEnabled, Value: "false"},                // 两步验证默认关闭
+        {Key: SettingKeyPrivacyEnabled, Value: DefaultPrivacyEnabled},
+        {Key: SettingKeyPrivacyScopes, Value: DefaultPrivacyScopes},
+        {Key: SettingKeyPrivacyFailurePolicy, Value: DefaultPrivacyFailurePolicy},
 	}
 }
 
 func (s *Setting) Validate() error {
 	switch s.Key {
+    case SettingKeyPrivacyEnabled, SettingKeyPrivacyScopes, SettingKeyPrivacyFailurePolicy:
+        enabled, scopes, failurePolicy := DefaultPrivacyEnabled, DefaultPrivacyScopes, DefaultPrivacyFailurePolicy
+        switch s.Key {
+        case SettingKeyPrivacyEnabled:
+            enabled = s.Value
+        case SettingKeyPrivacyScopes:
+            scopes = s.Value
+        case SettingKeyPrivacyFailurePolicy:
+            failurePolicy = s.Value
+        }
+        _, err := ParsePrivacyConfig(enabled, scopes, failurePolicy)
+        return err
 	case SettingKeyRelayLogMaxContentSizeMB:
 		value, err := strconv.Atoi(s.Value)
 		if err != nil {

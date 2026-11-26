@@ -11,6 +11,7 @@ import { SettingLLMSync } from './LLMSync';
 import { SettingLog } from './Log';
 import { SettingBackup } from './Backup';
 import { SettingCircuitBreaker } from './CircuitBreaker';
+import { SettingPrivacy } from './Privacy';
 
 export function Setting() {
     return (
@@ -20,6 +21,7 @@ export function Setting() {
                 <SettingAppearance key="setting-appearance" />
                 <SettingAccount key="setting-account" />
                 <SettingSystem key="setting-system" />
+                <SettingPrivacy key="setting-privacy" />
                 <SettingLog key="setting-log" />
                 <SettingLLMPrice key="setting-llmprice" />
                 <SettingAPIKey key="setting-apikey" />

@@ -21,17 +21,18 @@ const passthroughMetadataKey = "octopus_passthrough_event"
 // passthroughTransformer 只替换 pipeline 的协议转换阶段。
 // HTTP 执行、首 token 超时、空响应检测、错误处理和流生命周期仍由现有 pipeline 负责。
 type passthroughTransformer struct {
-	format           llm.APIFormat
-	baseURL          string
-	apiKey           string
-	rawRequest       *httpclient.Request
-	inbound          transformer.Inbound
-	outbound         transformer.Outbound
-	requestModel     string
-	responseCaptured bool
-	responseStatus   int
-	responseHeaders  http.Header
-	responseBody     []byte
+    format              llm.APIFormat
+    baseURL             string
+    apiKey              string
+    rawRequest          *httpclient.Request
+    inbound             transformer.Inbound
+    outbound            transformer.Outbound
+    requestModel        string
+    preserveEmptyEvents bool
+    responseCaptured    bool
+    responseStatus      int
+    responseHeaders     http.Header
+    responseBody        []byte
 }
 
 func (ra *relayAttempt) canPassthrough() bool {
@@ -92,13 +93,14 @@ func newPassthroughTransformer(ra *relayAttempt) (*passthroughTransformer, error
 		return nil, err
 	}
 	return &passthroughTransformer{
-		format:       ra.inboundType,
-		baseURL:      ra.channel.GetBaseUrl(),
-		apiKey:       ra.usedKey.ChannelKey,
-		rawRequest:   ra.internalRequest.RawRequest,
-		requestModel: ra.metrics.RequestModel,
-		inbound:      ra.inAdapter,
-		outbound:     ra.outAdapter,
+        format:              ra.inboundType,
+        baseURL:             ra.channel.GetBaseUrl(),
+        apiKey:              ra.usedKey.ChannelKey,
+        rawRequest:          ra.internalRequest.RawRequest,
+        requestModel:        ra.metrics.RequestModel,
+        preserveEmptyEvents: ra.privacySnapshot.Active(),
+        inbound:             ra.inAdapter,
+        outbound:            ra.outAdapter,
 	}, nil
 }
 
@@ -250,13 +252,18 @@ func passthroughUsage(format llm.APIFormat, body []byte) *llm.Usage {
 
 func (t *passthroughTransformer) TransformStream(ctx context.Context, request *httpclient.Request, stream streams.Stream[*httpclient.StreamEvent]) (streams.Stream[*llm.Response], error) {
 	stream = streams.Filter(stream, func(event *httpclient.StreamEvent) bool {
-		return event != nil && len(event.Data) > 0
+        return event != nil && (t.preserveEmptyEvents || len(event.Data) > 0)
 	})
 	return streams.Map(stream, func(event *httpclient.StreamEvent) *llm.Response {
 		object := "passthrough"
 		var choices []llm.Choice
 		switch {
 		case event == nil || len(event.Data) == 0:
+            // 隐私 FIFO 需要保留心跳等原始空载荷事件. 这里仅提供 pipeline
+            // 的非空占位, 最终写回仍使用 metadata 中未改动的原事件.
+            if event != nil && t.preserveEmptyEvents {
+                choices = []llm.Choice{{Delta: &llm.Message{Content: llm.MessageContent{Content: new("passthrough")}}}}
+            }
 		case string(event.Data) == "[DONE]":
 			object = "[DONE]"
 		default:

@@ -1,6 +1,7 @@
 package db
 
 import (
+    "errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -49,9 +50,25 @@ func InitDB(dbType, dsn string, debug bool) error {
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	sqlDB.SetConnMaxIdleTime(10 * time.Minute)
 
+    // 先检查已有隐私表，防止 AutoMigrate 在校验前改写未知结构。
+    privacyConn := db.Session(&gorm.Session{Logger: logger.Discard})
+    privacyExists, err := migrate.PrivacySchemaExists(privacyConn)
+    if err != nil {
+        return migrate.ErrPrivacySchema
+    }
+    if privacyExists {
+        if err := migrate.ValidatePrivacySchema(privacyConn); err != nil {
+            return migrate.ErrPrivacySchema
+        }
+    }
+
 	if err := migrate.BeforeAutoMigrate(db); err != nil {
+        if errors.Is(err, migrate.ErrPrivacySchema) {
+            return migrate.ErrPrivacySchema
+        }
 		return err
 	}
+    // SQLite 的隐私表始终只走版本化 DDL，不加入下方通用模型清单。
 	if err := db.AutoMigrate(
 		&model.User{},
 		&model.Channel{},
@@ -72,11 +89,24 @@ func InitDB(dbType, dsn string, debug bool) error {
 	); err != nil {
 		return err
 	}
+    // 只将 MySQL/PostgreSQL 的新隐私表加入独立的静默迁移清单，
+    // 已存在且校验通过的表也不交给 AutoMigrate；其他模型保留原有 SQL 日志行为。
+    if !privacyExists && db.Dialector.Name() != "sqlite" {
+        if err := privacyConn.AutoMigrate(&model.PrivacyRule{}); err != nil {
+            return migrate.ErrPrivacySchema
+        }
+        if err := migrate.ValidatePrivacySchema(privacyConn); err != nil {
+            return migrate.ErrPrivacySchema
+        }
+    }
 	if err := migrate.AfterAutoMigrate(db); err != nil {
 		return err
 	}
-	// Postgres: schema changes during migrations can invalidate cached prepared plans
-	// (e.g. "cached plan must not change result type"). Clear them.
+    // 不依赖 006 是否曾成功执行，每次启动迁移结束都重新检查完整结构。
+    if err := migrate.ValidatePrivacySchema(privacyConn); err != nil {
+        return migrate.ErrPrivacySchema
+    }
+    // PostgreSQL 迁移可能使已缓存的预执行计划失效，完成后清理连接计划。
 	if db.Dialector != nil && db.Dialector.Name() == "postgres" {
 		db.Exec("DEALLOCATE ALL")
 		db.Exec("DISCARD ALL")

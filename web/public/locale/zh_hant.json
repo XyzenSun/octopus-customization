@@ -230,6 +230,88 @@
                 "model": "模型"
             }
         },
+        "privacy": {
+            "title": "資料脫敏",
+            "description": "預設關閉, 至少有一條啟用規則才生效. 變更只影響新請求, 進行中的請求維持原快照. 協定直通不會繞過脫敏.",
+            "enabled": "啟用資料脫敏",
+            "loading": "載入中...",
+            "pending": "操作進行中",
+            "retry": "重試",
+            "saved": "脫敏設定已儲存",
+            "saveFailed": "儲存脫敏設定失敗",
+            "settingsLoadFailed": "無法載入有效的脫敏設定, 請確認後端支援此功能.",
+            "refreshFailed": "變更已儲存, 但重新整理失敗. 請重新載入後再繼續修改.",
+            "scopes": {
+                "title": "處理範圍",
+                "hint": "請求與回應使用相同範圍, 不區分歷史和新增內容. 預設只勾選普通訊息.",
+                "messages": {
+                    "label": "普通訊息",
+                    "hint": "包括 prompt、system prompt 和模型回覆, 不處理推理和媒體."
+                },
+                "toolDefinitions": {
+                    "label": "工具定義",
+                    "hint": "僅處理 description(包括 schema 描述); enum/pattern 等約束維持原樣, 其中敏感值仍可能傳送給上游, 描述變化可能影響模型理解."
+                },
+                "toolCalls": {
+                    "label": "工具呼叫",
+                    "hint": "參數字串變化可能影響 schema 和長度/位置約束. 關閉後模型產生的佔位符不會在工具參數中還原, 可能被工具寫入檔案."
+                },
+                "toolResponses": {
+                    "label": "工具回應",
+                    "hint": "檔案文字被替換後, 模型看到的位元組/字元/行列可能不同於實際檔案, 後續 offset/edit 工具可能失敗, 系統不換算位置."
+                },
+                "none": "全部範圍已關閉: 不改寫內容, 也不產生脫敏觸發標記.",
+                "defaultWarning": "注意: 預設只選普通訊息, 工具呼叫參數預設不還原; 普通訊息產生的佔位符可能被用戶端工具直接寫入檔案."
+            },
+            "failurePolicy": {
+                "label": "脫敏失敗策略",
+                "continue": "continue — 繼續(預設)",
+                "abort": "abort — 中止請求",
+                "continueHint": "continue 可能放棄脫敏: 請求處理失敗時傳送原始正文, 回應處理失敗時可能不還原佔位符. 串流失敗會捨棄未提交改寫, 剩餘回應不再還原, 已傳送內容無法回滾.",
+                "abortHint": "abort 停止處理: 請求端失敗不傳送上游, 未寫回的非串流回應傳回 502; 已開始的串流回應直接斷開, 不偽造完成事件."
+            },
+            "risks": {
+                "title": "限制與風險",
+                "exclusions": "embedding 和圖片產生/編輯/變體的請求、回應及錯誤均不處理. 對話中的媒體、檔案 URL 和二進位資料不掃描; 推理/thinking/摘要、協定簽章和加密內容始終不處理.",
+                "metadata": "協定模型名、角色、工具名、ID、JSON 鍵、Header、query 和非字串純量維持原樣, annotations/citations、引用偏移、logprobs 和 usage 也不改. 系統不協調工具 schema 或檔案 offset/range/行列, 不包裝用戶端工具執行, 不保證文字長度變化後的定位中繼資料正確.",
+                "plaintext": "原文仍可能保存在請求日誌、規則表和備份中, 回應日誌保留現有策略. 系統不會自動清理或加密, 請自行管理存取權限與保存期限.",
+                "history": "永久刪除或重新綁定可能改變歷史佔位符含義. 刪除後不保留舊反查, 別名可重複使用, 歷史佔位符可能還原為新綁定的原文. 停用規則也會同時停止替換與還原.",
+                "continue": "預設 continue 策略可能放棄脫敏並暴露原文. 日誌中的「觸發資料脫敏」僅表示實際傳送過部分改寫內容, 不代表所有內容都已成功脫敏."
+            },
+            "rules": {
+                "title": "替換規則",
+                "hint": "精確比對且區分大小寫, 不 trim 或正規化. 原文和別名各自全表唯一, 停用規則仍佔用這兩個值, 並同時退出替換與還原.",
+                "add": "新增規則",
+                "empty": "暫無規則",
+                "loadFailed": "載入脫敏規則失敗",
+                "source": "原文",
+                "alias": "別名",
+                "sourceHint": "{bytes} / 512 UTF-8 位元組. 必須為有效 UTF-8, 長度 1–512 位元組; 換行及首尾空白原樣保留.",
+                "sourceInvalid": "原文必須為有效 UTF-8, 長度為 1–512 位元組.",
+                "aliasHint": "嚴格限制為 1–64 個 ASCII 字元: A–Z、0–9 或 _; 不 trim, 也不自動轉大寫.",
+                "aliasInvalid": "別名只能包含 A–Z、0–9 和 _, 長度必須為 1–64.",
+                "enabled": "啟用",
+                "disabled": "停用",
+                "toggle": "啟用或停用規則 #{id}",
+                "edit": "編輯",
+                "delete": "永久刪除",
+                "createTitle": "新增脫敏規則",
+                "editTitle": "編輯脫敏規則",
+                "formHint": "新規則預設啟用, 後端執行最終驗證. 規則啟停同時控制原文替換與佔位符還原.",
+                "create": "建立",
+                "save": "儲存",
+                "cancel": "取消",
+                "created": "脫敏規則已建立",
+                "updated": "脫敏規則已更新",
+                "deleted": "脫敏規則已永久刪除",
+                "createFailed": "建立脫敏規則失敗",
+                "updateFailed": "更新脫敏規則失敗",
+                "deleteFailed": "刪除脫敏規則失敗",
+                "deleteTitle": "永久刪除這條規則?",
+                "deleteWarning": "危險: 永久刪除無法復原. 新請求不再替換或還原此對應, 舊反查不會保留. 原文和別名可重新使用, 重新綁定後歷史佔位符可能還原為新值; 日誌與備份不會被清理.",
+                "confirmDelete": "確認永久刪除"
+            }
+        },
         "saved": "已儲存",
         "backup": {
             "title": "備份 / 復原",
@@ -530,6 +612,7 @@
         "card": {
             "error": "錯誤",
             "errorInfo": "錯誤訊息",
+            "privacyTriggered": "觸發資料脫敏",
             "firstToken": "首字",
             "totalTime": "總耗時",
             "input": "輸入",
